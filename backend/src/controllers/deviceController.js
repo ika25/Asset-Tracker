@@ -27,15 +27,30 @@ export const createDevice = async (req, res) => {
   }
 };
 
+// Update device (partial update supported)
 export const updateDevice = async (req, res) => {
   const { id } = req.params;
-  const { name, ip_address, status, x_position, y_position } = req.body;
+
+  // Extract fields from request
+  const {
+    name,
+    ip_address,
+    status,
+    x_position,
+    y_position,
+  } = req.body;
 
   try {
+    // Use COALESCE to keep existing values if not provided
     const result = await pool.query(
-      `UPDATE devices
-       SET name=$1, ip_address=$2, status=$3, x_position=$4, y_position=$5
-       WHERE id=$6 RETURNING *`,
+      `UPDATE devices SET
+        name = COALESCE($1, name),
+        ip_address = COALESCE($2, ip_address),
+        status = COALESCE($3, status),
+        x_position = COALESCE($4, x_position),
+        y_position = COALESCE($5, y_position)
+      WHERE id = $6
+      RETURNING *`,
       [name, ip_address, status, x_position, y_position, id]
     );
 
