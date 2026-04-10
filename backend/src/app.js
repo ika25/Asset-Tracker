@@ -10,6 +10,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.get('/', (req, res) => {
+  res.json({ message: 'Asset Tracker API', version: '1.0.0' });
+});
+
 app.use('/api/devices', deviceRoutes);
 app.use('/api/floors', floorRoutes);
 app.use('/api/scan', scanRoutes);
