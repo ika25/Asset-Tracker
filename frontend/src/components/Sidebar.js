@@ -18,6 +18,7 @@ const Sidebar = () => {
 
   const menu = [
     { name: 'Dashboard', path: '/', icon: <FaTachometerAlt /> },
+    { name: 'Floor Map', path: '/floor', icon: <FaMap /> },
     {
       name: 'Machines',
       icon: <FaDesktop />,
@@ -26,7 +27,6 @@ const Sidebar = () => {
         { name: 'All Machines', path: '/devices?view=list', icon: <FaList /> },
       ],
     },
-    { name: 'Floor Map', path: '/floor', icon: <FaMap /> },
     {
       name: 'Software',
       icon: <FaCloud />,
