@@ -97,14 +97,14 @@ const FloorPage = () => {
                     {/* Devices */}
                     {devices.map((device) => (
                         <React.Fragment key={device.id}>
-
-                            {/* Device Icon (circle for now) */}
+                            {/* Device Icon (circle) */}
                             <Circle
-                                x={device.x_position || 100} // default position
+                                x={device.x_position || 100}
                                 y={device.y_position || 100}
                                 radius={10}
                                 fill={device.status === 'online' ? 'green' : 'red'}
-                                draggable // enables drag
+                                draggable
+                                onClick={() => setSelectedDevice(device)}
                                 onDragEnd={(e) => handleDragEnd(e, device)}
                             />
 
@@ -115,39 +115,19 @@ const FloorPage = () => {
                                 text={device.name}
                                 fontSize={12}
                             />
-
-                            // Device icon (clickable + draggable)
-                            <Circle
-                                x={device.x_position || 100}
-                                y={device.y_position || 100}
-                                radius={10}
-                                fill={device.status === 'online' ? 'green' : 'red'}
-                                draggable
-
-                                // =========================
-                                // Select device on click
-                                // =========================
-                                onClick={() => setSelectedDevice(device)}
-
-                                // =========================
-                                // Save position on drag
-                                // =========================
-                                onDragEnd={(e) => handleDragEnd(e, device)}
-                            />
-
                         </React.Fragment>
                     ))}
                 </Layer>
             </Stage>
-            // =========================
-            // Show panel when device selected
-            // =========================
+
+            {/* Show panel when device selected */}
             {selectedDevice && (
                 <DevicePanel
                     device={selectedDevice}
-                    onClose={() => setSelectedDevice(null)} // close panel
-                    refreshDevices={fetchDevices} // reload devices
+                    onClose={() => setSelectedDevice(null)}
+                    refreshDevices={fetchDevices}
                 />
+            )}
             )}
         </div>
     );
