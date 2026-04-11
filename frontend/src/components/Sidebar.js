@@ -27,7 +27,14 @@ const Sidebar = () => {
       ],
     },
     { name: 'Floor Map', path: '/floor', icon: <FaMap /> },
-    { name: 'Software', path: '/software', icon: <FaCloud /> },
+    {
+      name: 'Software',
+      icon: <FaCloud />,
+      submenu: [
+        { name: 'Add New Software', path: '/software?view=add', icon: <FaPlus /> },
+        { name: 'Software Inventory', path: '/software?view=list', icon: <FaList /> },
+      ],
+    },
     { name: 'Hardware', path: '/hardware', icon: <FaMicrochip /> },
   ];
 

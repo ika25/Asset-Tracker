@@ -22,6 +22,10 @@ const DevicesPage = () => {
     name: '',
     ip_address: '',
     type: '',
+    os: '',
+    ram: '',
+    disk_space: '',
+    device_age: '',
   });
 
   // Update active view when URL changes
@@ -62,7 +66,7 @@ const DevicesPage = () => {
   const handleAddDevice = async () => {
     try {
       await createDevice(newDevice); // send to backend
-      setNewDevice({ name: '', ip_address: '', type: '' }); // clear form
+      setNewDevice({ name: '', ip_address: '', type: '', os: '', ram: '', disk_space: '', device_age: '' }); // clear form
       // Don't change view - let the sidebar handle navigation
       fetchDevices(); // refresh list
     } catch (err) {
@@ -107,8 +111,36 @@ const DevicesPage = () => {
               />
               <input
                 name="type"
-                placeholder="Type (PC, Printer...)"
+                placeholder="Type (PC, Laptop, Printer...)"
                 value={newDevice.type}
+                onChange={handleChange}
+                style={styles.input}
+              />
+              <input
+                name="os"
+                placeholder="Operating System (Windows 10, macOS Monterey...)"
+                value={newDevice.os}
+                onChange={handleChange}
+                style={styles.input}
+              />
+              <input
+                name="ram"
+                placeholder="RAM (e.g., 16GB)"
+                value={newDevice.ram}
+                onChange={handleChange}
+                style={styles.input}
+              />
+              <input
+                name="disk_space"
+                placeholder="Disk Space (e.g., 512GB)"
+                value={newDevice.disk_space}
+                onChange={handleChange}
+                style={styles.input}
+              />
+              <input
+                name="device_age"
+                placeholder="Device Age (e.g., 2 years)"
+                value={newDevice.device_age}
                 onChange={handleChange}
                 style={styles.input}
               />
@@ -132,6 +164,10 @@ const DevicesPage = () => {
                     <th style={styles.th}>Name</th>
                     <th style={styles.th}>IP Address</th>
                     <th style={styles.th}>Type</th>
+                    <th style={styles.th}>Operating System</th>
+                    <th style={styles.th}>RAM</th>
+                    <th style={styles.th}>Disk Space</th>
+                    <th style={styles.th}>Device Age</th>
                     <th style={styles.th}>Status</th>
                     <th style={styles.th}>Actions</th>
                   </tr>
@@ -143,6 +179,10 @@ const DevicesPage = () => {
                       <td style={styles.td}>{device.name}</td>
                       <td style={styles.td}>{device.ip_address}</td>
                       <td style={styles.td}>{device.type}</td>
+                      <td style={styles.td}>{device.os || '-'}</td>
+                      <td style={styles.td}>{device.ram || '-'}</td>
+                      <td style={styles.td}>{device.disk_space || '-'}</td>
+                      <td style={styles.td}>{device.device_age || '-'}</td>
                       <td style={styles.td}>
                         <span
                           style={{
@@ -199,7 +239,7 @@ const styles = {
     flexDirection: 'column',
     gap: '10px',
     marginTop: '20px',
-    maxWidth: '400px',
+    maxWidth: '500px',
   },
   input: {
     padding: '10px',
@@ -221,6 +261,7 @@ const styles = {
     width: '100%',
     borderCollapse: 'collapse',
     marginTop: '20px',
+    fontSize: '13px',
   },
   tableHeader: {
     backgroundColor: '#ecf0f1',
@@ -231,6 +272,7 @@ const styles = {
     fontWeight: 'bold',
     borderBottom: '2px solid #bdc3c7',
     color: '#2c3e50',
+    whiteSpace: 'nowrap',
   },
   td: {
     padding: '12px',
