@@ -1,123 +1,71 @@
-// Import React and state hook
 import React, { useState } from 'react';
-
-// Import API functions for updating and deleting
 import { updateDevice, deleteDevice } from '../api/deviceApi';
 
-// =========================
-// DevicePanel Component
-// =========================
 const DevicePanel = ({ device, onClose, refreshDevices }) => {
-
-  // =========================
-  // Local state (form editing)
-  // =========================
+  // Form state
   const [formData, setFormData] = useState(device);
 
-  // =========================
-  // Handle input changes
-  // =========================
+  // Handle input
   const handleChange = (e) => {
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value, // update specific field
+      [e.target.name]: e.target.value,
     });
   };
 
-  // =========================
-  // Save updated device
-  // =========================
+  // Save changes
   const handleSave = async () => {
     try {
-      await updateDevice(device.id, formData); // send update to backend
-      refreshDevices(); // reload devices list
-      onClose(); // close panel
+      await updateDevice(device.id, formData);
+      refreshDevices();
+      onClose();
     } catch (err) {
       console.error(err);
     }
   };
 
-  // =========================
   // Delete device
-  // =========================
   const handleDelete = async () => {
     try {
-      await deleteDevice(device.id); // delete from backend
-      refreshDevices(); // refresh UI
-      onClose(); // close panel
+      await deleteDevice(device.id);
+      refreshDevices();
+      onClose();
     } catch (err) {
       console.error(err);
     }
   };
 
-  // =========================
-  // UI
-  // =========================
   return (
-    <div style={styles.panel}>
+    <div>
       <h3>Device Info</h3>
 
-      {/* Close panel */}
       <button onClick={onClose}>Close</button>
 
-      {/* Name */}
-      <div>
-        <label>Name:</label>
-        <input
-          name="name"
-          value={formData.name || ''}
-          onChange={handleChange}
-        />
-      </div>
+      <input
+        name="name"
+        value={formData.name || ''}
+        onChange={handleChange}
+      />
 
-      {/* IP Address */}
-      <div>
-        <label>IP Address:</label>
-        <input
-          name="ip_address"
-          value={formData.ip_address || ''}
-          onChange={handleChange}
-        />
-      </div>
+      <input
+        name="ip_address"
+        value={formData.ip_address || ''}
+        onChange={handleChange}
+      />
 
-      {/* Status */}
-      <div>
-        <label>Status:</label>
-        <select
-          name="status"
-          value={formData.status || 'offline'}
-          onChange={handleChange}
-        >
-          <option value="online">Online</option>
-          <option value="offline">Offline</option>
-        </select>
-      </div>
+      <select
+        name="status"
+        value={formData.status || 'offline'}
+        onChange={handleChange}
+      >
+        <option value="online">Online</option>
+        <option value="offline">Offline</option>
+      </select>
 
-      {/* Actions */}
       <button onClick={handleSave}>Save</button>
-
-      <button onClick={handleDelete} style={{ color: 'red' }}>
-        Delete
-      </button>
+      <button onClick={handleDelete}>Delete</button>
     </div>
   );
 };
 
-// =========================
-// Styling
-// =========================
-const styles = {
-  panel: {
-    position: 'fixed',
-    right: 0,
-    top: 0,
-    width: '250px',
-    height: '100%',
-    background: '#f4f4f4',
-    padding: '15px',
-    boxShadow: '-2px 0 5px rgba(0,0,0,0.2)',
-  },
-};
-
-// Export component
 export default DevicePanel;
