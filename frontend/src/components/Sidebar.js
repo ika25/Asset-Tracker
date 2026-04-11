@@ -35,7 +35,14 @@ const Sidebar = () => {
         { name: 'Software Inventory', path: '/software?view=list', icon: <FaList /> },
       ],
     },
-    { name: 'Hardware', path: '/hardware', icon: <FaMicrochip /> },
+    {
+      name: 'Hardware',
+      icon: <FaMicrochip />,
+      submenu: [
+        { name: 'Add New Hardware', path: '/hardware?view=add', icon: <FaPlus /> },
+        { name: 'Hardware Inventory', path: '/hardware?view=list', icon: <FaList /> },
+      ],
+    },
   ];
 
   const toggleMenu = (name) => {

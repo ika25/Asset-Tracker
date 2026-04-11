@@ -6,6 +6,7 @@ import {
   getDevices,
   createDevice,
   deleteDevice,
+  updateDevice,
 } from '../api/deviceApi';
 
 const DevicesPage = () => {
@@ -16,6 +17,7 @@ const DevicesPage = () => {
   // State to store devices
   const [devices, setDevices] = useState([]);
   const [activeView, setActiveView] = useState(viewParam === 'add' ? 'add' : 'list');
+  const [editingId, setEditingId] = useState(null);
 
   // State for new device form
   const [newDevice, setNewDevice] = useState({
@@ -26,6 +28,25 @@ const DevicesPage = () => {
     ram: '',
     disk_space: '',
     device_age: '',
+    serial_number: '',
+    warranty_expiry: '',
+    location: '',
+    status: 'Active',
+  });
+
+  // State for editing
+  const [editingData, setEditingData] = useState({
+    name: '',
+    ip_address: '',
+    type: '',
+    os: '',
+    ram: '',
+    disk_space: '',
+    device_age: '',
+    serial_number: '',
+    warranty_expiry: '',
+    location: '',
+    status: 'Active',
   });
 
   // Update active view when URL changes
@@ -66,7 +87,7 @@ const DevicesPage = () => {
   const handleAddDevice = async () => {
     try {
       await createDevice(newDevice); // send to backend
-      setNewDevice({ name: '', ip_address: '', type: '', os: '', ram: '', disk_space: '', device_age: '' }); // clear form
+      setNewDevice({ name: '', ip_address: '', type: '', os: '', ram: '', disk_space: '', device_age: '', serial_number: '', warranty_expiry: '', location: '', status: 'Active' }); // clear form
       // Don't change view - let the sidebar handle navigation
       fetchDevices(); // refresh list
     } catch (err) {
@@ -84,6 +105,44 @@ const DevicesPage = () => {
     } catch (err) {
       console.error(err);
     }
+  };
+
+  // =========================
+  // Start editing
+  // =========================
+  const handleStartEdit = (device) => {
+    setEditingId(device.id);
+    setEditingData(device);
+  };
+
+  // =========================
+  // Handle edit input changes
+  // =========================
+  const handleEditChange = (e) => {
+    setEditingData({
+      ...editingData,
+      [e.target.name]: e.target.value,
+    });
+  };
+
+  // =========================
+  // Save edited device
+  // =========================
+  const handleSaveEdit = async () => {
+    try {
+      await updateDevice(editingId, editingData); // update API
+      setEditingId(null);
+      fetchDevices(); // refresh list
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // =========================
+  // Cancel editing
+  // =========================
+  const handleCancelEdit = () => {
+    setEditingId(null);
   };
 
   return (
@@ -144,6 +203,40 @@ const DevicesPage = () => {
                 onChange={handleChange}
                 style={styles.input}
               />
+              <input
+                name="serial_number"
+                placeholder="Serial Number"
+                value={newDevice.serial_number}
+                onChange={handleChange}
+                style={styles.input}
+              />
+              <input
+                name="warranty_expiry"
+                placeholder="Warranty Expiry Date (YYYY-MM-DD)"
+                type="date"
+                value={newDevice.warranty_expiry}
+                onChange={handleChange}
+                style={styles.input}
+              />
+              <input
+                name="location"
+                placeholder="Location / Department"
+                value={newDevice.location}
+                onChange={handleChange}
+                style={styles.input}
+              />
+              <select
+                name="status"
+                value={newDevice.status}
+                onChange={handleChange}
+                style={styles.input}
+              >
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="Retired">Retired</option>
+                <option value="In Repair">In Repair</option>
+                <option value="For Sale">For Sale</option>
+              </select>
               <button onClick={handleAddDevice} style={styles.submitButton}>
                 Add Device
               </button>
@@ -158,16 +251,120 @@ const DevicesPage = () => {
             {devices.length === 0 ? (
               <p>No devices found.</p>
             ) : (
-              <table style={styles.table}>
+              <>
+                {/* Edit Form Modal */}
+                {editingId && (
+                  <div style={styles.editModal}>
+                    <div style={styles.editForm}>
+                      <h3>Edit Device</h3>
+                      <input
+                        name="name"
+                        placeholder="Device Name"
+                        value={editingData.name}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <input
+                        name="ip_address"
+                        placeholder="IP Address"
+                        value={editingData.ip_address}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <input
+                        name="type"
+                        placeholder="Type"
+                        value={editingData.type}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <input
+                        name="os"
+                        placeholder="Operating System"
+                        value={editingData.os}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <input
+                        name="ram"
+                        placeholder="RAM"
+                        value={editingData.ram}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <input
+                        name="disk_space"
+                        placeholder="Disk Space"
+                        value={editingData.disk_space}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <input
+                        name="device_age"
+                        placeholder="Device Age"
+                        value={editingData.device_age}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <input
+                        name="serial_number"
+                        placeholder="Serial Number"
+                        value={editingData.serial_number}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <input
+                        name="warranty_expiry"
+                        type="date"
+                        value={editingData.warranty_expiry}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <input
+                        name="location"
+                        placeholder="Location"
+                        value={editingData.location}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <select
+                        name="status"
+                        value={editingData.status}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      >
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                        <option value="Retired">Retired</option>
+                        <option value="In Repair">In Repair</option>
+                        <option value="For Sale">For Sale</option>
+                      </select>
+                      <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+                        <button onClick={handleSaveEdit} style={styles.submitButton}>
+                          Save Changes
+                        </button>
+                        <button onClick={handleCancelEdit} style={styles.cancelButton}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Devices Table */}
+                <table style={styles.table}>
                 <thead>
                   <tr style={styles.tableHeader}>
                     <th style={styles.th}>Name</th>
                     <th style={styles.th}>IP Address</th>
                     <th style={styles.th}>Type</th>
-                    <th style={styles.th}>Operating System</th>
-                    <th style={styles.th}>RAM</th>
-                    <th style={styles.th}>Disk Space</th>
-                    <th style={styles.th}>Device Age</th>
+                      <th style={styles.th}>OS</th>
+                      <th style={styles.th}>RAM</th>
+                      <th style={styles.th}>Disk</th>
+                      <th style={styles.th}>Age</th>
+                      <th style={styles.th}>Serial #</th>
+                      <th style={styles.th}>Warranty</th>
+                      <th style={styles.th}>Location</th>
                     <th style={styles.th}>Status</th>
                     <th style={styles.th}>Actions</th>
                   </tr>
@@ -183,11 +380,34 @@ const DevicesPage = () => {
                       <td style={styles.td}>{device.ram || '-'}</td>
                       <td style={styles.td}>{device.disk_space || '-'}</td>
                       <td style={styles.td}>{device.device_age || '-'}</td>
+                      <td style={styles.td}>{device.serial_number || '-'}</td>
+                      <td style={styles.td}>
+                        <span
+                          style={{
+                            ...styles.warranty,
+                            backgroundColor:
+                              device.warranty_expiry &&
+                              new Date(device.warranty_expiry) < new Date()
+                                ? '#e74c3c'
+                                : '#27ae60',
+                          }}
+                        >
+                          {device.warranty_expiry || '-'}
+                        </span>
+                      </td>
+                      <td style={styles.td}>{device.location || '-'}</td>
                       <td style={styles.td}>
                         <span
                           style={{
                             ...styles.status,
-                            backgroundColor: device.status === 'online' ? '#27ae60' : '#e74c3c',
+                            backgroundColor:
+                              device.status === 'Active'
+                                ? '#27ae60'
+                                : device.status === 'Inactive'
+                                ? '#f39c12'
+                                : device.status === 'Retired'
+                                ? '#e74c3c'
+                                : '#95a5a6',
                           }}
                         >
                           {device.status}
@@ -195,6 +415,12 @@ const DevicesPage = () => {
                       </td>
 
                       <td style={styles.td}>
+                        <button
+                          onClick={() => handleStartEdit(device)}
+                          style={styles.editButton}
+                        >
+                          Edit
+                        </button>
                         <button
                           onClick={() => handleDelete(device.id)}
                           style={styles.deleteButton}
@@ -206,6 +432,7 @@ const DevicesPage = () => {
                   ))}
                 </tbody>
               </table>
+              </>
             )}
           </div>
         )}
@@ -257,6 +484,39 @@ const styles = {
     fontSize: '14px',
     fontWeight: 'bold',
   },
+  cancelButton: {
+    padding: '10px',
+    backgroundColor: '#95a5a6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 'bold',
+  },
+  editModal: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  editForm: {
+    backgroundColor: '#fff',
+    padding: '30px',
+    borderRadius: '8px',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+    maxWidth: '500px',
+    width: '90%',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
   table: {
     width: '100%',
     borderCollapse: 'collapse',
@@ -283,12 +543,28 @@ const styles = {
       backgroundColor: '#f9f9f9',
     },
   },
+  warranty: {
+    padding: '4px 8px',
+    borderRadius: '4px',
+    color: 'white',
+    fontSize: '12px',
+    fontWeight: 'bold',
+  },
   status: {
     padding: '4px 8px',
     borderRadius: '4px',
     color: 'white',
     fontSize: '12px',
     fontWeight: 'bold',
+  },
+  editButton: {
+    padding: '6px 12px',
+    backgroundColor: '#3ba57d',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '12px',
   },
   deleteButton: {
     padding: '6px 12px',
@@ -298,6 +574,7 @@ const styles = {
     borderRadius: '4px',
     cursor: 'pointer',
     fontSize: '12px',
+    marginLeft: '5px',
   },
 };
 

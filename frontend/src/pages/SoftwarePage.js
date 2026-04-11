@@ -12,9 +12,21 @@ const SoftwarePage = () => {
   // State to store software
   const [softwareList, setSoftwareList] = useState([]);
   const [activeView, setActiveView] = useState(viewParam === 'add' ? 'add' : 'list');
+  const [editingId, setEditingId] = useState(null);
 
   // State for new software form
   const [newSoftware, setNewSoftware] = useState({
+    name: '',
+    version: '',
+    vendor: '',
+    license_type: '',
+    license_expiry: '',
+    installed_on: '',
+    installation_date: '',
+  });
+
+  // State for editing
+  const [editingData, setEditingData] = useState({
     name: '',
     version: '',
     vendor: '',
@@ -63,6 +75,43 @@ const SoftwarePage = () => {
   // =========================
   const handleDelete = (id) => {
     setSoftwareList(softwareList.filter((item) => item.id !== id));
+  };
+
+  // =========================
+  // Start editing
+  // =========================
+  const handleStartEdit = (software) => {
+    setEditingId(software.id);
+    setEditingData(software);
+  };
+
+  // =========================
+  // Handle edit input changes
+  // =========================
+  const handleEditChange = (e) => {
+    setEditingData({
+      ...editingData,
+      [e.target.name]: e.target.value,
+    });
+  };
+
+  // =========================
+  // Save edited software
+  // =========================
+  const handleSaveEdit = () => {
+    setSoftwareList(
+      softwareList.map((item) =>
+        item.id === editingId ? editingData : item
+      )
+    );
+    setEditingId(null);
+  };
+
+  // =========================
+  // Cancel editing
+  // =========================
+  const handleCancelEdit = () => {
+    setEditingId(null);
   };
 
   return (
@@ -139,7 +188,75 @@ const SoftwarePage = () => {
             {softwareList.length === 0 ? (
               <p>No software tracked. Start adding software to track licenses and installations.</p>
             ) : (
-              <table style={styles.table}>
+              <>
+                {/* Edit Form Modal */}
+                {editingId && (
+                  <div style={styles.editModal}>
+                    <div style={styles.editForm}>
+                      <h3>Edit Software</h3>
+                      <input
+                        name="name"
+                        placeholder="Software Name"
+                        value={editingData.name}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <input
+                        name="version"
+                        placeholder="Version"
+                        value={editingData.version}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <input
+                        name="vendor"
+                        placeholder="Vendor"
+                        value={editingData.vendor}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <input
+                        name="license_type"
+                        placeholder="License Type"
+                        value={editingData.license_type}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <input
+                        name="license_expiry"
+                        type="date"
+                        value={editingData.license_expiry}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <input
+                        name="installed_on"
+                        placeholder="Installed On"
+                        value={editingData.installed_on}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <input
+                        name="installation_date"
+                        type="date"
+                        value={editingData.installation_date}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+                        <button onClick={handleSaveEdit} style={styles.submitButton}>
+                          Save Changes
+                        </button>
+                        <button onClick={handleCancelEdit} style={styles.cancelButton}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Software Table */}
+                <table style={styles.table}>
                 <thead>
                   <tr style={styles.tableHeader}>
                     <th style={styles.th}>Software Name</th>
@@ -179,6 +296,12 @@ const SoftwarePage = () => {
 
                       <td style={styles.td}>
                         <button
+                          onClick={() => handleStartEdit(software)}
+                          style={styles.editButton}
+                        >
+                          Edit
+                        </button>
+                        <button
                           onClick={() => handleDelete(software.id)}
                           style={styles.deleteButton}
                         >
@@ -189,6 +312,7 @@ const SoftwarePage = () => {
                   ))}
                 </tbody>
               </table>
+              </>
             )}
           </div>
         )}
@@ -240,6 +364,39 @@ const styles = {
     fontSize: '14px',
     fontWeight: 'bold',
   },
+  cancelButton: {
+    padding: '10px',
+    backgroundColor: '#95a5a6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 'bold',
+  },
+  editModal: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  editForm: {
+    backgroundColor: '#fff',
+    padding: '30px',
+    borderRadius: '8px',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+    maxWidth: '500px',
+    width: '90%',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
   table: {
     width: '100%',
     borderCollapse: 'collapse',
@@ -273,6 +430,15 @@ const styles = {
     fontSize: '12px',
     fontWeight: 'bold',
   },
+  editButton: {
+    padding: '6px 12px',
+    backgroundColor: '#3ba57d',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '12px',
+  },
   deleteButton: {
     padding: '6px 12px',
     backgroundColor: '#e74c3c',
@@ -281,6 +447,7 @@ const styles = {
     borderRadius: '4px',
     cursor: 'pointer',
     fontSize: '12px',
+    marginLeft: '5px',
   },
 };
 
