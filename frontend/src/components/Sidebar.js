@@ -1,87 +1,67 @@
-// Import React
-import React, { useState } from 'react';
+import React from 'react';
+import { NavLink } from 'react-router-dom';
 
-// Import icons
 import {
   FaTachometerAlt,
   FaDesktop,
+  FaMap,
   FaCloud,
   FaMicrochip,
-  FaLink,
-  FaQuestionCircle,
 } from 'react-icons/fa';
 
 const Sidebar = () => {
-  // =========================
-  // Track active menu item
-  // =========================
-  const [active, setActive] = useState('Dashboard');
-
-  // =========================
-  // Menu items
-  // =========================
-  const menuItems = [
-    { name: 'Dashboard', icon: <FaTachometerAlt /> },
-    { name: 'Machines', icon: <FaDesktop /> },
-    { name: 'Software', icon: <FaCloud /> },
-    { name: 'Hardware', icon: <FaMicrochip /> },
-    { name: 'Quick Links', icon: <FaLink /> },
-    { name: 'Help', icon: <FaQuestionCircle /> },
+  const menu = [
+    { name: 'Dashboard', path: '/', icon: <FaTachometerAlt /> },
+    { name: 'Floor Map', path: '/floor', icon: <FaMap /> },
+    { name: 'Devices', path: '/devices', icon: <FaDesktop /> },
+    { name: 'Software', path: '/software', icon: <FaCloud /> },
+    { name: 'Hardware', path: '/hardware', icon: <FaMicrochip /> },
   ];
 
   return (
     <div style={styles.sidebar}>
       <h2 style={styles.logo}>IT Tracker</h2>
 
-      {/* Menu */}
-      {menuItems.map((item) => (
-        <div
+      {menu.map((item) => (
+        <NavLink
           key={item.name}
-          style={{
+          to={item.path}
+          style={({ isActive }) => ({
             ...styles.item,
-            ...(active === item.name ? styles.active : {}),
-          }}
-          onClick={() => setActive(item.name)}
+            ...(isActive ? styles.active : {}),
+          })}
         >
           <span style={styles.icon}>{item.icon}</span>
-          <span>{item.name}</span>
-        </div>
+          {item.name}
+        </NavLink>
       ))}
     </div>
   );
 };
 
-// =========================
-// Styles
-// =========================
 const styles = {
   sidebar: {
     width: '220px',
-    height: '100vh',
     background: 'linear-gradient(180deg, #3ba57d, #6cc3a0)',
     color: 'white',
     paddingTop: '20px',
     display: 'flex',
     flexDirection: 'column',
   },
-
   logo: {
     textAlign: 'center',
     marginBottom: '30px',
   },
-
   item: {
     display: 'flex',
     alignItems: 'center',
     padding: '15px',
-    cursor: 'pointer',
-    transition: '0.2s',
+    textDecoration: 'none',
+    color: 'white',
   },
-
   icon: {
     marginRight: '10px',
   },
-
   active: {
     background: 'rgba(255,255,255,0.2)',
     borderLeft: '4px solid white',

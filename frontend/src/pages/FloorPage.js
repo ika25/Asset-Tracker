@@ -11,9 +11,6 @@ import { getDevices, updateDevice } from '../api/deviceApi';
 import DevicePanel from '../components/DevicePanel';
 import AddDevicePanel from '../components/AddDevicePanel';
 
-// Import sidebar
-import Sidebar from '../components/Sidebar';
-
 const FloorPage = () => {
   // =========================
   // STATE
@@ -92,9 +89,6 @@ const FloorPage = () => {
 
   return (
     <div style={styles.container}>
-      {/* LEFT SIDEBAR */}
-      <Sidebar />
-
       {/* MAP AREA */}
       <div style={styles.map}>
         <Stage width={900} height={600} onClick={handleStageClick}>
@@ -174,13 +168,8 @@ const FloorPage = () => {
 const styles = {
   container: {
     display: 'flex',
-    height: '100vh',
-  },
-  sidebar: {
-    width: '200px',
-    background: '#2c3e50',
-    color: 'white',
-    padding: '15px',
+    flexDirection: 'column',
+    height: '100%',
   },
   map: {
     flex: 1,
