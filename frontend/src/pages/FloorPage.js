@@ -11,6 +11,9 @@ import { getDevices, updateDevice } from '../api/deviceApi';
 import DevicePanel from '../components/DevicePanel';
 import AddDevicePanel from '../components/AddDevicePanel';
 
+// Import sidebar
+import Sidebar from '../components/Sidebar';
+
 const FloorPage = () => {
   // =========================
   // STATE
@@ -90,10 +93,7 @@ const FloorPage = () => {
   return (
     <div style={styles.container}>
       {/* LEFT SIDEBAR */}
-      <div style={styles.sidebar}>
-        <h3>Controls</h3>
-        <p>Click map to add device</p>
-      </div>
+      <Sidebar />
 
       {/* MAP AREA */}
       <div style={styles.map}>
