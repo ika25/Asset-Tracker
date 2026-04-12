@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import axios from 'axios';
 
-// For demo purposes - you can replace with actual API calls
-// import { getHardware, createHardware, deleteHardware } from '../api/hardwareApi';
+const API = 'http://localhost:5000/api/hardware';
 
 const HardwarePage = () => {
   // Get URL query parameters
@@ -40,6 +40,17 @@ const HardwarePage = () => {
     status: 'Active',
   });
 
+  const fetchHardware = async () => {
+    try {
+      const res = await axios.get(API);
+      setHardwareList(res.data);
+    } catch (err) {
+      console.error('Failed to fetch hardware:', err);
+    }
+  };
+
+  useEffect(() => { fetchHardware(); }, []);
+
   // Update active view when URL changes
   useEffect(() => {
     setActiveView(viewParam === 'add' ? 'add' : 'list');
@@ -60,27 +71,36 @@ const HardwarePage = () => {
   // =========================
   const handleAddHardware = async () => {
     if (newHardware.name && newHardware.type) {
-      // Add to list (in real app, send to backend)
-      setHardwareList([...hardwareList, { id: Date.now(), ...newHardware }]);
-      setNewHardware({
-        name: '',
-        type: '',
-        model: '',
-        manufacturer: '',
-        purchase_date: '',
-        cost: '',
-        location: '',
-        warranty_expiry: '',
-        status: 'Active',
-      });
+      try {
+        await axios.post(API, newHardware);
+        await fetchHardware();
+        setNewHardware({
+          name: '',
+          type: '',
+          model: '',
+          manufacturer: '',
+          purchase_date: '',
+          cost: '',
+          location: '',
+          warranty_expiry: '',
+          status: 'Active',
+        });
+      } catch (err) {
+        console.error('Failed to add hardware:', err);
+      }
     }
   };
 
   // =========================
   // Delete hardware
   // =========================
-  const handleDelete = (id) => {
-    setHardwareList(hardwareList.filter((item) => item.id !== id));
+  const handleDelete = async (id) => {
+    try {
+      await axios.delete(`${API}/${id}`);
+      await fetchHardware();
+    } catch (err) {
+      console.error('Failed to delete hardware:', err);
+    }
   };
 
   // =========================
@@ -104,13 +124,14 @@ const HardwarePage = () => {
   // =========================
   // Save edited hardware
   // =========================
-  const handleSaveEdit = () => {
-    setHardwareList(
-      hardwareList.map((item) =>
-        item.id === editingId ? editingData : item
-      )
-    );
-    setEditingId(null);
+  const handleSaveEdit = async () => {
+    try {
+      await axios.put(`${API}/${editingId}`, editingData);
+      await fetchHardware();
+      setEditingId(null);
+    } catch (err) {
+      console.error('Failed to update hardware:', err);
+    }
   };
 
   // =========================

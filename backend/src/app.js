@@ -6,6 +6,7 @@ import floorRoutes from './routes/floorRoutes.js';
 import scanRoutes from './routes/scanRoutes.js';
 import deviceSoftwareRoutes from './routes/deviceSoftwareRoutes.js';
 import softwareRoutes from './routes/softwareRoutes.js';
+import hardwareRoutes from './routes/hardwareRoutes.js';
 
 const app = express();
 
@@ -22,5 +23,6 @@ app.use('/api/floors', floorRoutes);
 app.use('/api/scan', scanRoutes);
 app.use('/api/device-software', deviceSoftwareRoutes);
 app.use('/api/software', softwareRoutes);
+app.use('/api/hardware', hardwareRoutes);
 
 export default app;
