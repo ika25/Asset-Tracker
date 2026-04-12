@@ -46,7 +46,9 @@ const FloorPage = () => {
   const hasAutoFittedRef = useRef(false);
 
   const GRID_SIZE = 20; // pixels
-  const SNAP_SIZE = 20; // snap to grid
+  const SNAP_SIZE = 1; // near pixel-level placement accuracy
+  const ICON_SIZE = 45;
+  const ICON_HALF = Math.round(ICON_SIZE / 2);
 
   const mapScaleX = mapSize.width / BASE_MAP_WIDTH;
   const mapScaleY = mapSize.height / BASE_MAP_HEIGHT;
@@ -198,11 +200,10 @@ const FloorPage = () => {
   // HANDLE DRAG
   // =========================
   const handleDragEnd = async (e, device) => {
-    let canvasX = e.target.x();
-    let canvasY = e.target.y();
+    const nodePos = e.target.position();
 
-    let x = canvasX / mapScaleX;
-    let y = canvasY / mapScaleY;
+    let x = nodePos.x / mapScaleX;
+    let y = nodePos.y / mapScaleY;
 
     // Snap to grid
     x = Math.round(x / SNAP_SIZE) * SNAP_SIZE;
@@ -210,6 +211,12 @@ const FloorPage = () => {
 
     x = Math.max(0, Math.min(x, BASE_MAP_WIDTH));
     y = Math.max(0, Math.min(y, BASE_MAP_HEIGHT));
+
+    // Keep dropped node visually aligned with snapped/persisted coords.
+    e.target.position({
+      x: x * mapScaleX,
+      y: y * mapScaleY,
+    });
 
     try {
       await updateDevice(device.id, {
@@ -532,8 +539,14 @@ const FloorPage = () => {
 
               {/* Devices */}
               {filteredDevices.map((device) => {
-                const x = (device.x_position || 100) * mapScaleX;
-                const y = (device.y_position || 100) * mapScaleY;
+                const hasX = device.x_position !== null && device.x_position !== undefined && device.x_position !== '';
+                const hasY = device.y_position !== null && device.y_position !== undefined && device.y_position !== '';
+                const rawX = hasX ? Number(device.x_position) : NaN;
+                const rawY = hasY ? Number(device.y_position) : NaN;
+                const logicalX = Number.isFinite(rawX) ? rawX : 100;
+                const logicalY = Number.isFinite(rawY) ? rawY : 100;
+                const x = logicalX * mapScaleX;
+                const y = logicalY * mapScaleY;
                 const icon = device.icon || '💻';
 
                 const status = (device.status || '').toLowerCase();
@@ -544,8 +557,6 @@ const FloorPage = () => {
                     key={device.id}
                     x={x}
                     y={y}
-                    offsetX={22}
-                    offsetY={22}
                     draggable
                     onClick={() => setSelectedDevice(device)}
                     onMouseEnter={(e) => {
@@ -558,17 +569,17 @@ const FloorPage = () => {
                     onDragEnd={(e) => handleDragEnd(e, device)}
                   >
                     <Text
-                      x={0}
-                      y={0}
+                      x={-ICON_HALF}
+                      y={-ICON_HALF}
                       text={icon}
-                      fontSize={45}
+                      fontSize={ICON_SIZE}
                       stroke={selectedDevice?.id === device.id ? 'yellow' : undefined}
                       strokeWidth={selectedDevice?.id === device.id ? 1 : 0}
                     />
                     {/* Status dot badge */}
                     <Circle
-                      x={31}
-                      y={-7}
+                      x={8}
+                      y={-ICON_HALF - 8}
                       radius={6}
                       fill={dotColor}
                       stroke="white"
@@ -576,8 +587,8 @@ const FloorPage = () => {
                       listening={false}
                     />
                     <Text
-                      x={50}
-                      y={0}
+                      x={ICON_HALF + 8}
+                      y={-8}
                       text={device.name}
                       fontSize={12}
                       fill="black"
