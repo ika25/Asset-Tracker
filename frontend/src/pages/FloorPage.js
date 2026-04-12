@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 // Konva canvas components
-import { Stage, Layer, Group, Image, Circle, Text, Line } from 'react-konva';
+import { Stage, Layer, Group, Image, Text, Line } from 'react-konva';
 
 // API functions
 import { getDevices, updateDevice } from '../api/deviceApi';
@@ -196,8 +196,8 @@ const FloorPage = () => {
   // HANDLE DRAG
   // =========================
   const handleDragEnd = async (e, device) => {
-    const canvasX = e.target.x();
-    const canvasY = e.target.y();
+    let canvasX = e.target.x();
+    let canvasY = e.target.y();
 
     let x = canvasX / mapScaleX;
     let y = canvasY / mapScaleY;
@@ -230,7 +230,7 @@ const FloorPage = () => {
   // HANDLE CLICK (DESELECT DEVICE)
   // =========================
   const handleStageClick = (e) => {
-    if (e.target.getClassName() === 'Circle') return;
+    if (e.target.draggable()) return;
     setSelectedDevice(null);
   };
 
@@ -295,7 +295,8 @@ const FloorPage = () => {
   // DRAG MAP PANNING
   // =========================
   const handleMouseDown = (e) => {
-    if (e.target.getClassName() === 'Circle') return;
+    const t = e.target;
+    if (typeof t.draggable === 'function' && (t.draggable() || t.getParent()?.draggable())) return;
 
     const stage = e.target.getStage();
     const pointer = stage?.getPointerPosition();
@@ -441,29 +442,6 @@ const FloorPage = () => {
       {/* TOOLBAR */}
       <div style={styles.toolbar}>
         <div style={styles.toolbarGroup}>
-          <button
-            onClick={handleZoomIn}
-            style={styles.toolButton}
-            title="Zoom In"
-          >
-            🔍+ (Zoom In)
-          </button>
-          <button
-            onClick={handleZoomOut}
-            style={styles.toolButton}
-            title="Zoom Out"
-          >
-            🔍- (Zoom Out)
-          </button>
-          <button
-            onClick={handleResetView}
-            style={styles.toolButton}
-            title="Reset View"
-          >
-            ⟲ Reset
-          </button>
-          <span style={styles.zoomLevel}>{Math.round(zoom * 100)}%</span>
-
           {/* Grid Toggle */}
           <button
             onClick={() => setShowGrid(!showGrid)}
@@ -577,45 +555,33 @@ const FloorPage = () => {
                 const icon = device.icon || '💻';
 
                 return (
-                  <React.Fragment key={device.id}>
-                  <Circle
+                  <Group
+                    key={device.id}
                     x={x}
                     y={y}
-                    radius={10}
-                    fill={getDeviceColor(device.type)}
+                    offsetX={9}
+                    offsetY={9}
                     draggable
-
-                    // Select device
-                    onClick={() => {
-                      setSelectedDevice(device);
-                    }}
-
-                    // Save drag
+                    onClick={() => setSelectedDevice(device)}
                     onDragEnd={(e) => handleDragEnd(e, device)}
-
-                    // Highlight selected
-                    stroke={
-                      selectedDevice?.id === device.id ? 'yellow' : null
-                    }
-                    strokeWidth={2}
-                    opacity={0.25}
-                  />
-
-                  <Text
-                    x={x - 8}
-                    y={y - 10}
-                    text={icon}
-                    fontSize={18}
-                  />
-
-                  <Text
-                    x={x + 12}
-                    y={y - 5}
-                    text={device.name}
-                    fontSize={12}
-                    fill="black"
-                  />
-                  </React.Fragment>
+                  >
+                    <Text
+                      x={0}
+                      y={0}
+                      text={icon}
+                      fontSize={18}
+                      stroke={selectedDevice?.id === device.id ? 'yellow' : undefined}
+                      strokeWidth={selectedDevice?.id === device.id ? 1 : 0}
+                    />
+                    <Text
+                      x={21}
+                      y={0}
+                      text={device.name}
+                      fontSize={12}
+                      fill="black"
+                      listening={false}
+                    />
+                  </Group>
                 );
               })}
               </Group>
@@ -628,41 +594,7 @@ const FloorPage = () => {
             💡 Drag to pan • Scroll to zoom • Click device to edit • Drag device to move (snaps to grid)
           </div>
 
-          {/* MINIMAP */}
-          <div style={styles.minimapContainer}>
-            <div style={styles.minimapTitle}>Minimap</div>
-            <svg
-              width="120"
-              height="70"
-              style={styles.minimapSvg}
-              viewBox={`0 0 ${mapSize.width} ${mapSize.height}`}
-            >
-              {/* Background */}
-              <rect width={mapSize.width} height={mapSize.height} fill="#f0f0f0" stroke="#999" strokeWidth="1" />
 
-              {/* Current viewport indicator */}
-              <rect
-                x={Math.max(0, -position.x / zoom)}
-                y={Math.max(0, -position.y / zoom)}
-                width={viewportSize.width / zoom}
-                height={viewportSize.height / zoom}
-                fill="none"
-                stroke="#3ba57d"
-                strokeWidth="8"
-              />
-
-              {/* Device dots */}
-              {filteredDevices.map((device) => (
-                <circle
-                  key={device.id}
-                  cx={(device.x_position || 100) * mapScaleX}
-                  cy={(device.y_position || 100) * mapScaleY}
-                  r="2"
-                  fill={getDeviceColor(device.type)}
-                />
-              ))}
-            </svg>
-          </div>
         </div>
 
 
@@ -827,28 +759,7 @@ const styles = {
     whiteSpace: 'nowrap',
   },
 
-  minimapContainer: {
-    position: 'absolute',
-    bottom: '30px',
-    right: '30px',
-    backgroundColor: '#fff',
-    border: '2px solid #3ba57d',
-    borderRadius: '6px',
-    padding: '8px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-    zIndex: 100,
-  },
-  minimapTitle: {
-    fontSize: '11px',
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: '6px',
-    textAlign: 'center',
-  },
-  minimapSvg: {
-    border: '1px solid #ddd',
-    borderRadius: '4px',
-  },
+
 };
 
 export default FloorPage;
