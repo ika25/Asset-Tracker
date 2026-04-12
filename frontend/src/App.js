@@ -3,9 +3,10 @@ import React from 'react';
 
 // Router
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-
 // Sidebar
 import Sidebar from './components/Sidebar';
+
+
 
 // Pages
 import Dashboard from './pages/Dashboard';
