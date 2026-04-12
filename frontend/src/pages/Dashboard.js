@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 
@@ -34,31 +34,31 @@ const Dashboard = () => {
     fetchData();
   }, []);
 
-  const toDate = (value) => {
+  const toDate = useCallback((value) => {
     if (!value) return null;
     const parsed = new Date(value);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
-  };
+  }, []);
 
-  const startOfToday = () => {
+  const startOfToday = useCallback(() => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
     return now;
-  };
+  }, []);
 
-  const daysUntil = (value) => {
+  const daysUntil = useCallback((value) => {
     const d = toDate(value);
     if (!d) return null;
     const today = startOfToday();
     const target = new Date(d);
     target.setHours(0, 0, 0, 0);
     return Math.ceil((target - today) / (1000 * 60 * 60 * 24));
-  };
+  }, [startOfToday, toDate]);
 
-  const isExpiringInDays = (value, maxDays) => {
+  const isExpiringInDays = useCallback((value, maxDays) => {
     const remaining = daysUntil(value);
     return remaining !== null && remaining >= 0 && remaining <= maxDays;
-  };
+  }, [daysUntil]);
 
   const metrics = useMemo(() => {
     const onlineDevices = devices.filter((d) => String(d.status || '').toLowerCase() === 'online').length;
@@ -131,7 +131,7 @@ const Dashboard = () => {
       attentionItems: [...offlineList, ...expiringLicenses, ...expiringWarranties].slice(0, 10),
       latestRecords,
     };
-  }, [devices, hardware, software]);
+  }, [daysUntil, devices, hardware, isExpiringInDays, software]);
 
   const totalForChart = Math.max(1, metrics.onlineDevices + metrics.offlineDevices + metrics.unknownDevices);
   const onlinePct = (metrics.onlineDevices / totalForChart) * 100;
