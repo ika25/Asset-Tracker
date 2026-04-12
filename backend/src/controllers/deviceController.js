@@ -12,13 +12,13 @@ export const getDevices = async (req, res) => {
 };
 
 export const createDevice = async (req, res) => {
-  const { name, ip_address, type, x_position, y_position, floor_id } = req.body;
+  const { name, ip_address, type, x_position, y_position, floor_id, icon } = req.body;
 
   try {
     const result = await pool.query(
-      `INSERT INTO devices (name, ip_address, type, x_position, y_position, floor_id)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [name, ip_address, type, x_position, y_position, floor_id]
+      `INSERT INTO devices (name, ip_address, type, x_position, y_position, floor_id, icon)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [name, ip_address, type, x_position, y_position, floor_id, icon]
     );
 
     res.json(result.rows[0]);
@@ -35,9 +35,11 @@ export const updateDevice = async (req, res) => {
   const {
     name,
     ip_address,
+    type,
     status,
     x_position,
     y_position,
+    icon,
   } = req.body;
 
   try {
@@ -46,12 +48,14 @@ export const updateDevice = async (req, res) => {
       `UPDATE devices SET
         name = COALESCE($1, name),
         ip_address = COALESCE($2, ip_address),
-        status = COALESCE($3, status),
-        x_position = COALESCE($4, x_position),
-        y_position = COALESCE($5, y_position)
-      WHERE id = $6
+        type = COALESCE($3, type),
+        status = COALESCE($4, status),
+        x_position = COALESCE($5, x_position),
+        y_position = COALESCE($6, y_position),
+        icon = COALESCE($7, icon)
+      WHERE id = $8
       RETURNING *`,
-      [name, ip_address, status, x_position, y_position, id]
+      [name, ip_address, type, status, x_position, y_position, icon, id]
     );
 
     res.json(result.rows[0]);

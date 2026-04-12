@@ -9,6 +9,8 @@ import {
   updateDevice,
 } from '../api/deviceApi';
 
+const ICON_OPTIONS = ['💻', '🖥️', '🖨️', '🛜', '📡', '🗄️', '📱', '📷'];
+
 const DevicesPage = () => {
   // Get URL query parameters
   const [searchParams] = useSearchParams();
@@ -27,6 +29,7 @@ const DevicesPage = () => {
     name: '',
     ip_address: '',
     type: '',
+    icon: '💻',
     os: '',
     ram: '',
     disk_space: '',
@@ -42,6 +45,7 @@ const DevicesPage = () => {
     name: '',
     ip_address: '',
     type: '',
+    icon: '💻',
     os: '',
     ram: '',
     disk_space: '',
@@ -90,7 +94,7 @@ const DevicesPage = () => {
   const handleAddDevice = async () => {
     try {
       await createDevice(newDevice); // send to backend
-      setNewDevice({ name: '', ip_address: '', type: '', os: '', ram: '', disk_space: '', device_age: '', serial_number: '', warranty_expiry: '', location: '', status: 'Active' }); // clear form
+      setNewDevice({ name: '', ip_address: '', type: '', icon: '💻', os: '', ram: '', disk_space: '', device_age: '', serial_number: '', warranty_expiry: '', location: '', status: 'Active' }); // clear form
       // Don't change view - let the sidebar handle navigation
       fetchDevices(); // refresh list
     } catch (err) {
@@ -198,6 +202,16 @@ const DevicesPage = () => {
                 onChange={handleChange}
                 style={styles.input}
               />
+              <select
+                name="icon"
+                value={newDevice.icon}
+                onChange={handleChange}
+                style={styles.input}
+              >
+                {ICON_OPTIONS.map((icon) => (
+                  <option key={icon} value={icon}>{icon}</option>
+                ))}
+              </select>
               <input
                 name="os"
                 placeholder="Operating System (Windows 10, macOS Monterey...)"
@@ -334,6 +348,16 @@ const DevicesPage = () => {
                         onChange={handleEditChange}
                         style={styles.input}
                       />
+                      <select
+                        name="icon"
+                        value={editingData.icon || '💻'}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      >
+                        {ICON_OPTIONS.map((icon) => (
+                          <option key={icon} value={icon}>{icon}</option>
+                        ))}
+                      </select>
                       <input
                         name="os"
                         placeholder="Operating System"
@@ -411,6 +435,7 @@ const DevicesPage = () => {
                 <table style={styles.table}>
                 <thead>
                   <tr style={styles.tableHeader}>
+                    <th style={styles.th}>Icon</th>
                     <th style={styles.th}>Name</th>
                     <th style={styles.th}>IP Address</th>
                     <th style={styles.th}>Type</th>
@@ -429,6 +454,7 @@ const DevicesPage = () => {
                 <tbody>
                   {filteredDevices.map((device) => (
                     <tr key={device.id} style={styles.tableRow}>
+                      <td style={styles.td}>{device.icon || '💻'}</td>
                       <td style={styles.td}>{device.name}</td>
                       <td style={styles.td}>{device.ip_address}</td>
                       <td style={styles.td}>{device.type}</td>

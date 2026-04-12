@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { updateDevice, deleteDevice } from '../api/deviceApi';
 
+const ICON_OPTIONS = ['💻', '🖥️', '🖨️', '🛜', '📡', '🗄️', '📱', '📷'];
+
 const DevicePanel = ({ device, onClose, refreshDevices }) => {
   // Form state
   const [formData, setFormData] = useState(device);
@@ -131,6 +133,21 @@ const DevicePanel = ({ device, onClose, refreshDevices }) => {
               >
                 <option value="online">Online</option>
                 <option value="offline">Offline</option>
+              </select>
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Icon</label>
+              <select
+                name="icon"
+                value={formData.icon || '💻'}
+                onChange={handleChange}
+                disabled={loading}
+                style={styles.input}
+              >
+                {ICON_OPTIONS.map((icon) => (
+                  <option key={icon} value={icon}>{icon}</option>
+                ))}
               </select>
             </div>
 
@@ -298,10 +315,6 @@ const styles = {
     fontWeight: '700',
     transition: 'all 0.3s ease',
     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-    cursor: 'not-allowed',
   },
   buttonDisabled: {
     opacity: 0.6,

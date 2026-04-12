@@ -1,8 +1,8 @@
 // Import React and hooks
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 // Konva canvas components
-import { Stage, Layer, Group, Image, Circle, Text, Line, Rect } from 'react-konva';
+import { Stage, Layer, Group, Image, Circle, Text, Line } from 'react-konva';
 
 // API functions
 import { getDevices, updateDevice } from '../api/deviceApi';
@@ -115,7 +115,7 @@ const FloorPage = () => {
     }
   };
 
-  const fitToView = () => {
+  const fitToView = useCallback(() => {
     const safeWidth = Math.max(200, viewportSize.width);
     const safeHeight = Math.max(200, viewportSize.height);
     const fitZoom = Math.min(
@@ -132,7 +132,7 @@ const FloorPage = () => {
       x: safeWidth / 2 - contentCenterX * nextZoom,
       y: safeHeight / 2 - contentCenterY * nextZoom,
     });
-  };
+  }, [viewportSize.width, viewportSize.height, contentBounds.width, contentBounds.height, contentBounds.x, contentBounds.y]);
 
   // =========================
   // LOAD FLOOR IMAGE
@@ -174,7 +174,7 @@ const FloorPage = () => {
     if (!floorImage || hasAutoFittedRef.current) return;
     fitToView();
     hasAutoFittedRef.current = true;
-  }, [floorImage, viewportSize.width, viewportSize.height, mapSize.width, mapSize.height]);
+  }, [floorImage, fitToView]);
 
   // =========================
   // FETCH DEVICES
@@ -574,6 +574,7 @@ const FloorPage = () => {
               {filteredDevices.map((device) => {
                 const x = (device.x_position || 100) * mapScaleX;
                 const y = (device.y_position || 100) * mapScaleY;
+                const icon = device.icon || '💻';
 
                 return (
                   <React.Fragment key={device.id}>
@@ -597,6 +598,14 @@ const FloorPage = () => {
                       selectedDevice?.id === device.id ? 'yellow' : null
                     }
                     strokeWidth={2}
+                    opacity={0.25}
+                  />
+
+                  <Text
+                    x={x - 8}
+                    y={y - 10}
+                    text={icon}
+                    fontSize={18}
                   />
 
                   <Text
