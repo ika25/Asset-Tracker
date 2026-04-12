@@ -3,8 +3,9 @@ import cors from 'cors';
 // Import route
 import deviceRoutes from './routes/deviceRoutes.js';
 import floorRoutes from './routes/floorRoutes.js';
-import scanRoutes from './routes/scanRoutes.js';// Import route
+import scanRoutes from './routes/scanRoutes.js';
 import deviceSoftwareRoutes from './routes/deviceSoftwareRoutes.js';
+import softwareRoutes from './routes/softwareRoutes.js';
 
 const app = express();
 
@@ -20,5 +21,6 @@ app.use('/api/devices', deviceRoutes);
 app.use('/api/floors', floorRoutes);
 app.use('/api/scan', scanRoutes);
 app.use('/api/device-software', deviceSoftwareRoutes);
+app.use('/api/software', softwareRoutes);
 
 export default app;

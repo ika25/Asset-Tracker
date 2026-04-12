@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import axios from 'axios';
 
-// For demo purposes - you can replace with actual API calls
-// import { getSoftware, createSoftware, deleteSoftware } from '../api/softwareApi';
+const API = 'http://localhost:5000/api/software';
 
 const SoftwarePage = () => {
   // Get URL query parameters
@@ -36,6 +36,18 @@ const SoftwarePage = () => {
     installation_date: '',
   });
 
+  // Fetch software from backend
+  const fetchSoftware = async () => {
+    try {
+      const res = await axios.get(API);
+      setSoftwareList(res.data);
+    } catch (err) {
+      console.error('Failed to fetch software:', err);
+    }
+  };
+
+  useEffect(() => { fetchSoftware(); }, []);
+
   // Update active view when URL changes
   useEffect(() => {
     setActiveView(viewParam === 'add' ? 'add' : 'list');
@@ -56,25 +68,34 @@ const SoftwarePage = () => {
   // =========================
   const handleAddSoftware = async () => {
     if (newSoftware.name && newSoftware.vendor) {
-      // Add to list (in real app, send to backend)
-      setSoftwareList([...softwareList, { id: Date.now(), ...newSoftware }]);
-      setNewSoftware({
-        name: '',
-        version: '',
-        vendor: '',
-        license_type: '',
-        license_expiry: '',
-        installed_on: '',
-        installation_date: '',
-      });
+      try {
+        await axios.post(API, newSoftware);
+        await fetchSoftware();
+        setNewSoftware({
+          name: '',
+          version: '',
+          vendor: '',
+          license_type: '',
+          license_expiry: '',
+          installed_on: '',
+          installation_date: '',
+        });
+      } catch (err) {
+        console.error('Failed to add software:', err);
+      }
     }
   };
 
   // =========================
   // Delete software
   // =========================
-  const handleDelete = (id) => {
-    setSoftwareList(softwareList.filter((item) => item.id !== id));
+  const handleDelete = async (id) => {
+    try {
+      await axios.delete(`${API}/${id}`);
+      await fetchSoftware();
+    } catch (err) {
+      console.error('Failed to delete software:', err);
+    }
   };
 
   // =========================
@@ -98,13 +119,14 @@ const SoftwarePage = () => {
   // =========================
   // Save edited software
   // =========================
-  const handleSaveEdit = () => {
-    setSoftwareList(
-      softwareList.map((item) =>
-        item.id === editingId ? editingData : item
-      )
-    );
-    setEditingId(null);
+  const handleSaveEdit = async () => {
+    try {
+      await axios.put(`${API}/${editingId}`, editingData);
+      await fetchSoftware();
+      setEditingId(null);
+    } catch (err) {
+      console.error('Failed to update software:', err);
+    }
   };
 
   // =========================
