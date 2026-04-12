@@ -111,6 +111,8 @@ const Sidebar = () => {
 const styles = {
   sidebar: {
     width: '220px',
+    minWidth: '220px',
+    flexShrink: 0,
     background: 'linear-gradient(180deg, #3ba57d, #6cc3a0)',
     color: 'white',
     paddingTop: '20px',

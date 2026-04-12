@@ -1,8 +1,8 @@
 // Import React and hooks
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 // Konva canvas components
-import { Stage, Layer, Image, Circle, Text, Line, Rect } from 'react-konva';
+import { Stage, Layer, Group, Image, Circle, Text, Line, Rect } from 'react-konva';
 
 // API functions
 import { getDevices, updateDevice } from '../api/deviceApi';
@@ -11,6 +11,9 @@ import { getDevices, updateDevice } from '../api/deviceApi';
 import DevicePanel from '../components/DevicePanel';
 
 const FloorPage = () => {
+  const BASE_MAP_WIDTH = 1200;
+  const BASE_MAP_HEIGHT = 700;
+
   // =========================
   // STATE
   // =========================
@@ -19,25 +22,159 @@ const FloorPage = () => {
   const [floorImage, setFloorImage] = useState(null);
   const [zoom, setZoom] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [viewportSize, setViewportSize] = useState({ width: 1200, height: 700 });
   const [searchFilter, setSearchFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [showGrid, setShowGrid] = useState(true);
-  const stageRef = React.useRef(null);
+  const [mapSize, setMapSize] = useState({
+    width: BASE_MAP_WIDTH,
+    height: BASE_MAP_HEIGHT,
+  });
+  const [contentBounds, setContentBounds] = useState({
+    x: 0,
+    y: 0,
+    width: BASE_MAP_WIDTH,
+    height: BASE_MAP_HEIGHT,
+  });
+  const stageRef = useRef(null);
+  const mapViewportRef = useRef(null);
+  const hasAutoFittedRef = useRef(false);
 
   const GRID_SIZE = 20; // pixels
   const SNAP_SIZE = 20; // snap to grid
+
+  const mapScaleX = mapSize.width / BASE_MAP_WIDTH;
+  const mapScaleY = mapSize.height / BASE_MAP_HEIGHT;
+
+  const detectContentBounds = (img) => {
+    try {
+      const w = img.naturalWidth || img.width || BASE_MAP_WIDTH;
+      const h = img.naturalHeight || img.height || BASE_MAP_HEIGHT;
+      const sampleMax = 900;
+      const scale = Math.min(1, sampleMax / Math.max(w, h));
+      const sw = Math.max(1, Math.floor(w * scale));
+      const sh = Math.max(1, Math.floor(h * scale));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = sw;
+      canvas.height = sh;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) {
+        return { x: 0, y: 0, width: w, height: h };
+      }
+
+      ctx.drawImage(img, 0, 0, sw, sh);
+      const data = ctx.getImageData(0, 0, sw, sh).data;
+
+      let minX = sw;
+      let minY = sh;
+      let maxX = -1;
+      let maxY = -1;
+
+      const step = 2;
+      for (let y = 0; y < sh; y += step) {
+        for (let x = 0; x < sw; x += step) {
+          const i = (y * sw + x) * 4;
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          const a = data[i + 3];
+
+          // Consider non-white and non-transparent pixels as content.
+          const isContent = a > 12 && !(r > 245 && g > 245 && b > 245);
+          if (!isContent) continue;
+
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+
+      if (maxX < 0 || maxY < 0) {
+        return { x: 0, y: 0, width: w, height: h };
+      }
+
+      const padding = 20;
+      const bx = Math.max(0, Math.floor(minX / scale) - padding);
+      const by = Math.max(0, Math.floor(minY / scale) - padding);
+      const bw = Math.min(w - bx, Math.ceil((maxX - minX) / scale) + padding * 2);
+      const bh = Math.min(h - by, Math.ceil((maxY - minY) / scale) + padding * 2);
+
+      return { x: bx, y: by, width: Math.max(1, bw), height: Math.max(1, bh) };
+    } catch (err) {
+      return {
+        x: 0,
+        y: 0,
+        width: img.naturalWidth || img.width || BASE_MAP_WIDTH,
+        height: img.naturalHeight || img.height || BASE_MAP_HEIGHT,
+      };
+    }
+  };
+
+  const fitToView = () => {
+    const safeWidth = Math.max(200, viewportSize.width);
+    const safeHeight = Math.max(200, viewportSize.height);
+    const fitZoom = Math.min(
+      safeWidth / contentBounds.width,
+      safeHeight / contentBounds.height
+    );
+    const nextZoom = Math.max(0.2, Math.min(6, fitZoom));
+
+    const contentCenterX = contentBounds.x + contentBounds.width / 2;
+    const contentCenterY = contentBounds.y + contentBounds.height / 2;
+
+    setZoom(nextZoom);
+    setPosition({
+      x: safeWidth / 2 - contentCenterX * nextZoom,
+      y: safeHeight / 2 - contentCenterY * nextZoom,
+    });
+  };
 
   // =========================
   // LOAD FLOOR IMAGE
   // =========================
   useEffect(() => {
     const img = new window.Image();
+    img.decoding = 'async';
     img.src = '/floor.png'; // must be in public/
-    img.onload = () => setFloorImage(img);
+    img.onload = () => {
+      setFloorImage(img);
+      setMapSize({
+        width: img.naturalWidth || img.width || BASE_MAP_WIDTH,
+        height: img.naturalHeight || img.height || BASE_MAP_HEIGHT,
+      });
+      setContentBounds(detectContentBounds(img));
+    };
   }, []);
+
+  useEffect(() => {
+    const el = mapViewportRef.current;
+    if (!el) return;
+
+    const resize = () => {
+      setViewportSize({
+        width: Math.max(400, Math.floor(el.clientWidth)),
+        height: Math.max(300, Math.floor(el.clientHeight)),
+      });
+    };
+
+    resize();
+
+    const observer = new window.ResizeObserver(resize);
+    observer.observe(el);
+
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!floorImage || hasAutoFittedRef.current) return;
+    fitToView();
+    hasAutoFittedRef.current = true;
+  }, [floorImage, viewportSize.width, viewportSize.height, mapSize.width, mapSize.height]);
 
   // =========================
   // FETCH DEVICES
@@ -59,12 +196,18 @@ const FloorPage = () => {
   // HANDLE DRAG
   // =========================
   const handleDragEnd = async (e, device) => {
-    let x = e.target.x();
-    let y = e.target.y();
+    const canvasX = e.target.x();
+    const canvasY = e.target.y();
+
+    let x = canvasX / mapScaleX;
+    let y = canvasY / mapScaleY;
 
     // Snap to grid
     x = Math.round(x / SNAP_SIZE) * SNAP_SIZE;
     y = Math.round(y / SNAP_SIZE) * SNAP_SIZE;
+
+    x = Math.max(0, Math.min(x, BASE_MAP_WIDTH));
+    y = Math.max(0, Math.min(y, BASE_MAP_HEIGHT));
 
     try {
       await updateDevice(device.id, {
@@ -108,16 +251,15 @@ const FloorPage = () => {
   // ZOOM CONTROLS WITH MOUSE POSITION
   // =========================
   const handleZoomIn = () => {
-    setZoom((z) => Math.min(z + 0.2, 3));
+    setZoom((z) => Math.min(z + 0.2, 6));
   };
 
   const handleZoomOut = () => {
-    setZoom((z) => Math.max(z - 0.2, 0.5));
+    setZoom((z) => Math.max(z - 0.2, 0.2));
   };
 
   const handleResetView = () => {
-    setZoom(1);
-    setPosition({ x: 0, y: 0 });
+    fitToView();
   };
 
   // Handle mouse wheel zoom (zooms to cursor position)
@@ -129,17 +271,20 @@ const FloorPage = () => {
     if (!stage) return;
 
     const oldScale = zoom;
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+
     const mousePointTo = {
-      x: e.evt.offsetX / oldScale - position.x / oldScale,
-      y: e.evt.offsetY / oldScale - position.y / oldScale,
+      x: (pointer.x - position.x) / oldScale,
+      y: (pointer.y - position.y) / oldScale,
     };
 
     let newScale = e.evt.deltaY > 0 ? oldScale * scaleBy : oldScale / scaleBy;
-    newScale = Math.max(0.5, Math.min(newScale, 3));
+    newScale = Math.max(0.2, Math.min(newScale, 6));
 
     const newPos = {
-      x: -(mousePointTo.x - e.evt.offsetX / newScale) * newScale,
-      y: -(mousePointTo.y - e.evt.offsetY / newScale) * newScale,
+      x: pointer.x - mousePointTo.x * newScale,
+      y: pointer.y - mousePointTo.y * newScale,
     };
 
     setZoom(newScale);
@@ -150,34 +295,32 @@ const FloorPage = () => {
   // DRAG MAP PANNING
   // =========================
   const handleMouseDown = (e) => {
-    // Don't drag if clicking on a device
     if (e.target.getClassName() === 'Circle') return;
-    
-    setIsDragging(true);
+
     const stage = e.target.getStage();
-    const pos = stage.getPointerPosition();
-    setDragStart(pos);
+    const pointer = stage?.getPointerPosition();
+    if (!pointer) return;
+
+    setIsPanning(true);
+    setPanStart(pointer);
   };
 
   const handleMouseMove = (e) => {
-    if (!isDragging) return;
+    if (!isPanning) return;
 
     const stage = e.target.getStage();
-    const pos = stage.getPointerPosition();
+    const pointer = stage?.getPointerPosition();
+    if (!pointer) return;
 
-    const dx = pos.x - dragStart.x;
-    const dy = pos.y - dragStart.y;
+    const dx = pointer.x - panStart.x;
+    const dy = pointer.y - panStart.y;
 
-    setPosition((prev) => ({
-      x: prev.x + dx / zoom,
-      y: prev.y + dy / zoom,
-    }));
-
-    setDragStart(pos);
+    setPosition((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
+    setPanStart(pointer);
   };
 
   const handleMouseUp = () => {
-    setIsDragging(false);
+    setIsPanning(false);
   };
 
   // =========================
@@ -185,8 +328,8 @@ const FloorPage = () => {
   // =========================
   const generateGridLines = () => {
     const lines = [];
-    const mapWidth = 1200;
-    const mapHeight = 700;
+    const mapWidth = mapSize.width;
+    const mapHeight = mapSize.height;
 
     for (let i = 0; i <= mapWidth; i += GRID_SIZE) {
       lines.push(
@@ -213,7 +356,7 @@ const FloorPage = () => {
 
   const generateRulerLabels = () => {
     const labels = [];
-    for (let i = 0; i <= 1200; i += 100) {
+    for (let i = 0; i <= mapSize.width; i += 100) {
       labels.push(
         <Text
           key={`x${i}`}
@@ -226,7 +369,7 @@ const FloorPage = () => {
         />
       );
     }
-    for (let i = 0; i <= 700; i += 100) {
+    for (let i = 0; i <= mapSize.height; i += 100) {
       labels.push(
         <Text
           key={`y${i}`}
@@ -332,6 +475,14 @@ const FloorPage = () => {
           >
             ⊞ Grid
           </button>
+
+          <button
+            onClick={fitToView}
+            style={styles.toolButton}
+            title="Fit map to screen"
+          >
+            Fit Map
+          </button>
         </div>
 
         <div style={styles.filterGroup}>
@@ -388,23 +539,21 @@ const FloorPage = () => {
       {/* MAP AREA */}
       <div style={styles.mapAreaWrapper}>
         <div style={styles.mapContainer}>
+          <div ref={mapViewportRef} style={styles.stageViewport}>
           <Stage
             ref={stageRef}
-            width={1200}
-            height={700}
+            width={viewportSize.width}
+            height={viewportSize.height}
             onClick={handleStageClick}
             onWheel={handleWheel}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
-            style={{ cursor: isDragging ? 'grabbing' : 'crosshair' }}
-            scaleX={zoom}
-            scaleY={zoom}
-            offsetX={-position.x}
-            offsetY={-position.y}
+            style={{ cursor: isPanning ? 'grabbing' : 'grab' }}
           >
             <Layer>
+              <Group x={position.x} y={position.y} scaleX={zoom} scaleY={zoom}>
               {/* Grid Background */}
               {showGrid && generateGridLines()}
 
@@ -413,15 +562,24 @@ const FloorPage = () => {
 
               {/* Floor Image */}
               {floorImage && (
-                <Image image={floorImage} width={1200} height={700} />
+                <Image
+                  image={floorImage}
+                  width={mapSize.width}
+                  height={mapSize.height}
+                  imageSmoothingEnabled={true}
+                />
               )}
 
               {/* Devices */}
-              {filteredDevices.map((device) => (
-                <React.Fragment key={device.id}>
+              {filteredDevices.map((device) => {
+                const x = (device.x_position || 100) * mapScaleX;
+                const y = (device.y_position || 100) * mapScaleY;
+
+                return (
+                  <React.Fragment key={device.id}>
                   <Circle
-                    x={device.x_position || 100}
-                    y={device.y_position || 100}
+                    x={x}
+                    y={y}
                     radius={10}
                     fill={getDeviceColor(device.type)}
                     draggable
@@ -442,16 +600,19 @@ const FloorPage = () => {
                   />
 
                   <Text
-                    x={(device.x_position || 100) + 12}
-                    y={(device.y_position || 100) - 5}
+                    x={x + 12}
+                    y={y - 5}
                     text={device.name}
                     fontSize={12}
                     fill="black"
                   />
-                </React.Fragment>
-              ))}
+                  </React.Fragment>
+                );
+              })}
+              </Group>
             </Layer>
           </Stage>
+          </div>
 
           {/* Instruction Text */}
           <div style={styles.instruction}>
@@ -465,17 +626,17 @@ const FloorPage = () => {
               width="120"
               height="70"
               style={styles.minimapSvg}
-              viewBox="0 0 1200 700"
+              viewBox={`0 0 ${mapSize.width} ${mapSize.height}`}
             >
               {/* Background */}
-              <rect width="1200" height="700" fill="#f0f0f0" stroke="#999" strokeWidth="1" />
+              <rect width={mapSize.width} height={mapSize.height} fill="#f0f0f0" stroke="#999" strokeWidth="1" />
 
               {/* Current viewport indicator */}
               <rect
-                x={position.x}
-                y={position.y}
-                width={1200 / zoom}
-                height={700 / zoom}
+                x={Math.max(0, -position.x / zoom)}
+                y={Math.max(0, -position.y / zoom)}
+                width={viewportSize.width / zoom}
+                height={viewportSize.height / zoom}
                 fill="none"
                 stroke="#3ba57d"
                 strokeWidth="8"
@@ -485,8 +646,8 @@ const FloorPage = () => {
               {filteredDevices.map((device) => (
                 <circle
                   key={device.id}
-                  cx={device.x_position || 100}
-                  cy={device.y_position || 100}
+                  cx={(device.x_position || 100) * mapScaleX}
+                  cy={(device.y_position || 100) * mapScaleY}
                   r="2"
                   fill={getDeviceColor(device.type)}
                 />
@@ -634,8 +795,17 @@ const styles = {
     alignItems: 'center',
     padding: '20px',
     position: 'relative',
-    overflow: 'auto',
+    overflow: 'hidden',
     backgroundColor: '#f9f9f9',
+  },
+  stageViewport: {
+    width: '100%',
+    height: '100%',
+    minHeight: '420px',
+    border: '1px solid #dfe6e9',
+    borderRadius: '8px',
+    overflow: 'hidden',
+    backgroundColor: '#ffffff',
   },
   instruction: {
     marginTop: '20px',

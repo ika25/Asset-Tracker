@@ -44,9 +44,12 @@ const styles = {
   container: {
     display: 'flex',
     height: '100vh',
+    overflow: 'hidden',
   },
   content: {
     flex: 1,
+    minWidth: 0,
+    overflow: 'auto',
     padding: '20px',
     background: '#f5f6fa',
   },
