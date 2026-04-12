@@ -78,6 +78,9 @@ const DevicesPage = () => {
     fetchDevices();
   }, []);
 
+  const normalizeDateValue = (value) => (value ? String(value).split('T')[0] : '');
+  const formatDate = (value) => normalizeDateValue(value) || '-';
+
   // =========================
   // Handle input changes
   // =========================
@@ -119,7 +122,10 @@ const DevicesPage = () => {
   // =========================
   const handleStartEdit = (device) => {
     setEditingId(device.id);
-    setEditingData(device);
+    setEditingData({
+      ...device,
+      warranty_expiry: normalizeDateValue(device.warranty_expiry),
+    });
   };
 
   // =========================
@@ -474,7 +480,7 @@ const DevicesPage = () => {
                                 : '#27ae60',
                           }}
                         >
-                          {device.warranty_expiry || '-'}
+                          {formatDate(device.warranty_expiry)}
                         </span>
                       </td>
                       <td style={styles.td}>{device.location || '-'}</td>

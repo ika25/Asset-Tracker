@@ -51,6 +51,9 @@ const SoftwarePage = () => {
 
   useEffect(() => { fetchSoftware(); }, []);
 
+  const normalizeDateValue = (value) => (value ? String(value).split('T')[0] : '');
+  const formatDate = (value) => normalizeDateValue(value) || '-';
+
   // Update active view when URL changes
   useEffect(() => {
     setActiveView(viewParam === 'add' ? 'add' : 'list');
@@ -106,7 +109,11 @@ const SoftwarePage = () => {
   // =========================
   const handleStartEdit = (software) => {
     setEditingId(software.id);
-    setEditingData(software);
+    setEditingData({
+      ...software,
+      license_expiry: normalizeDateValue(software.license_expiry),
+      installation_date: normalizeDateValue(software.installation_date),
+    });
   };
 
   // =========================
@@ -364,11 +371,11 @@ const SoftwarePage = () => {
                                 : '#27ae60',
                           }}
                         >
-                          {software.license_expiry || '-'}
+                          {formatDate(software.license_expiry)}
                         </span>
                       </td>
                       <td style={styles.td}>{software.installed_on || '-'}</td>
-                      <td style={styles.td}>{software.installation_date || '-'}</td>
+                      <td style={styles.td}>{formatDate(software.installation_date)}</td>
 
                       <td style={styles.td}>
                         <button

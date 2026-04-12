@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 // Konva canvas components
-import { Stage, Layer, Group, Image, Text, Line } from 'react-konva';
+import { Stage, Layer, Group, Image, Text, Line, Circle } from 'react-konva';
 
 // API functions
 import { getDevices, updateDevice } from '../api/deviceApi';
@@ -235,33 +235,6 @@ const FloorPage = () => {
   };
 
   // =========================
-  // GET DEVICE COLOR BY TYPE
-  // =========================
-  const getDeviceColor = (type) => {
-    if (!type) return '#95a5a6'; // Gray for unknown
-    const t = type.toLowerCase();
-    if (t.includes('pc') || t.includes('laptop')) return '#3498db'; // Blue
-    if (t.includes('printer') || t.includes('scanner')) return '#e67e22'; // Orange
-    if (t.includes('server')) return '#e74c3c'; // Red
-    if (t.includes('switch') || t.includes('router')) return '#9b59b6'; // Purple
-    return '#95a5a6'; // Gray default
-  };
-
-  // =========================
-  // ZOOM CONTROLS WITH MOUSE POSITION
-  // =========================
-  const handleZoomIn = () => {
-    setZoom((z) => Math.min(z + 0.2, 6));
-  };
-
-  const handleZoomOut = () => {
-    setZoom((z) => Math.max(z - 0.2, 0.2));
-  };
-
-  const handleResetView = () => {
-    fitToView();
-  };
-
   // Handle mouse wheel zoom (zooms to cursor position)
   const handleWheel = (e) => {
     e.evt.preventDefault();
@@ -554,13 +527,16 @@ const FloorPage = () => {
                 const y = (device.y_position || 100) * mapScaleY;
                 const icon = device.icon || '💻';
 
+                const status = (device.status || '').toLowerCase();
+                const dotColor = status === 'online' ? '#2ecc71' : status === 'offline' ? '#e74c3c' : '#95a5a6';
+
                 return (
                   <Group
                     key={device.id}
                     x={x}
                     y={y}
-                    offsetX={9}
-                    offsetY={9}
+                    offsetX={22}
+                    offsetY={22}
                     draggable
                     onClick={() => setSelectedDevice(device)}
                     onDragEnd={(e) => handleDragEnd(e, device)}
@@ -569,12 +545,22 @@ const FloorPage = () => {
                       x={0}
                       y={0}
                       text={icon}
-                      fontSize={18}
+                      fontSize={45}
                       stroke={selectedDevice?.id === device.id ? 'yellow' : undefined}
                       strokeWidth={selectedDevice?.id === device.id ? 1 : 0}
                     />
+                    {/* Status dot badge */}
+                    <Circle
+                      x={31}
+                      y={-7}
+                      radius={6}
+                      fill={dotColor}
+                      stroke="white"
+                      strokeWidth={1}
+                      listening={false}
+                    />
                     <Text
-                      x={21}
+                      x={50}
                       y={0}
                       text={device.name}
                       fontSize={12}

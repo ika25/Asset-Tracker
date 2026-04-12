@@ -54,6 +54,9 @@ const HardwarePage = () => {
 
   useEffect(() => { fetchHardware(); }, []);
 
+  const normalizeDateValue = (value) => (value ? String(value).split('T')[0] : '');
+  const formatDate = (value) => normalizeDateValue(value) || '-';
+
   // Update active view when URL changes
   useEffect(() => {
     setActiveView(viewParam === 'add' ? 'add' : 'list');
@@ -111,7 +114,11 @@ const HardwarePage = () => {
   // =========================
   const handleStartEdit = (hardware) => {
     setEditingId(hardware.id);
-    setEditingData(hardware);
+    setEditingData({
+      ...hardware,
+      purchase_date: normalizeDateValue(hardware.purchase_date),
+      warranty_expiry: normalizeDateValue(hardware.warranty_expiry),
+    });
   };
 
   // =========================
@@ -397,7 +404,7 @@ const HardwarePage = () => {
                         <td style={styles.td}>{hardware.type || '-'}</td>
                         <td style={styles.td}>{hardware.model || '-'}</td>
                         <td style={styles.td}>{hardware.manufacturer || '-'}</td>
-                        <td style={styles.td}>{hardware.purchase_date || '-'}</td>
+                        <td style={styles.td}>{formatDate(hardware.purchase_date)}</td>
                         <td style={styles.td}>{hardware.cost || '-'}</td>
                         <td style={styles.td}>{hardware.location || '-'}</td>
                         <td style={styles.td}>
@@ -411,7 +418,7 @@ const HardwarePage = () => {
                                   : '#27ae60',
                             }}
                           >
-                            {hardware.warranty_expiry || '-'}
+                            {formatDate(hardware.warranty_expiry)}
                           </span>
                         </td>
                         <td style={styles.td}>
@@ -431,18 +438,20 @@ const HardwarePage = () => {
                         </td>
 
                         <td style={styles.td}>
-                          <button
-                            onClick={() => handleStartEdit(hardware)}
-                            style={styles.editButton}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDelete(hardware.id)}
-                            style={styles.deleteButton}
-                          >
-                            Delete
-                          </button>
+                          <div style={styles.actionButtons}>
+                            <button
+                              onClick={() => handleStartEdit(hardware)}
+                              style={styles.editButton}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDelete(hardware.id)}
+                              style={styles.deleteButton}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -612,6 +621,11 @@ const styles = {
     borderRadius: '4px',
     cursor: 'pointer',
     fontSize: '12px',
+  },
+  actionButtons: {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
   },
 };
 
