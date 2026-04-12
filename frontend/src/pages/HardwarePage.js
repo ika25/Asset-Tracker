@@ -13,6 +13,9 @@ const HardwarePage = () => {
   const [hardwareList, setHardwareList] = useState([]);
   const [activeView, setActiveView] = useState(viewParam === 'add' ? 'add' : 'list');
   const [editingId, setEditingId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [typeFilter, setTypeFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('All');
 
   // State for new hardware form
   const [newHardware, setNewHardware] = useState({
@@ -141,6 +144,20 @@ const HardwarePage = () => {
     setEditingId(null);
   };
 
+  const hardwareTypes = [...new Set(hardwareList.map((h) => h.type).filter(Boolean))];
+
+  const filteredHardware = hardwareList.filter((hardware) => {
+    const query = searchTerm.toLowerCase();
+    const matchesSearch =
+      (hardware.name || '').toLowerCase().includes(query) ||
+      (hardware.model || '').toLowerCase().includes(query) ||
+      (hardware.manufacturer || '').toLowerCase().includes(query) ||
+      (hardware.location || '').toLowerCase().includes(query);
+    const matchesType = typeFilter === 'All' || hardware.type === typeFilter;
+    const matchesStatus = statusFilter === 'All' || hardware.status === statusFilter;
+    return matchesSearch && matchesType && matchesStatus;
+  });
+
   return (
     <div style={styles.container}>
       {/* MAIN CONTENT */}
@@ -230,8 +247,37 @@ const HardwarePage = () => {
         {activeView === 'list' && (
           <div style={styles.section}>
             <h2>Hardware Inventory</h2>
-            {hardwareList.length === 0 ? (
-              <p>No hardware tracked. Start adding hardware items to track inventory and warranties.</p>
+            <div style={styles.filterBar}>
+              <input
+                placeholder="Search name, model, manufacturer, location"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={styles.filterInput}
+              />
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                style={styles.filterInput}
+              >
+                <option value="All">All Types</option>
+                {hardwareTypes.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                style={styles.filterInput}
+              >
+                <option value="All">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="Retired">Retired</option>
+                <option value="For Sale">For Sale</option>
+              </select>
+            </div>
+            {filteredHardware.length === 0 ? (
+              <p>{hardwareList.length === 0 ? 'No hardware tracked. Start adding hardware items to track inventory and warranties.' : 'No hardware matches current filters.'}</p>
             ) : (
               <>
                 {/* Edit Form Modal */}
@@ -336,7 +382,7 @@ const HardwarePage = () => {
                   </thead>
 
                   <tbody>
-                    {hardwareList.map((hardware) => (
+                    {filteredHardware.map((hardware) => (
                       <tr key={hardware.id} style={styles.tableRow}>
                         <td style={styles.td}>{hardware.name}</td>
                         <td style={styles.td}>{hardware.type || '-'}</td>
@@ -490,6 +536,19 @@ const styles = {
     borderCollapse: 'collapse',
     marginTop: '20px',
     fontSize: '13px',
+  },
+  filterBar: {
+    display: 'grid',
+    gridTemplateColumns: '2fr 1fr 1fr',
+    gap: '10px',
+    marginTop: '14px',
+    marginBottom: '8px',
+  },
+  filterInput: {
+    padding: '10px',
+    border: '1px solid #bdc3c7',
+    borderRadius: '4px',
+    fontSize: '14px',
   },
   tableHeader: {
     backgroundColor: '#ecf0f1',

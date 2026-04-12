@@ -18,6 +18,9 @@ const DevicesPage = () => {
   const [devices, setDevices] = useState([]);
   const [activeView, setActiveView] = useState(viewParam === 'add' ? 'add' : 'list');
   const [editingId, setEditingId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [typeFilter, setTypeFilter] = useState('All');
 
   // State for new device form
   const [newDevice, setNewDevice] = useState({
@@ -145,6 +148,20 @@ const DevicesPage = () => {
     setEditingId(null);
   };
 
+  const deviceTypes = [...new Set(devices.map((d) => d.type).filter(Boolean))];
+
+  const filteredDevices = devices.filter((device) => {
+    const query = searchTerm.toLowerCase();
+    const matchesSearch =
+      (device.name || '').toLowerCase().includes(query) ||
+      (device.ip_address || '').toLowerCase().includes(query) ||
+      (device.os || '').toLowerCase().includes(query) ||
+      (device.location || '').toLowerCase().includes(query);
+    const matchesStatus = statusFilter === 'All' || device.status === statusFilter;
+    const matchesType = typeFilter === 'All' || device.type === typeFilter;
+    return matchesSearch && matchesStatus && matchesType;
+  });
+
   return (
     <div style={styles.container}>
       {/* MAIN CONTENT */}
@@ -248,8 +265,38 @@ const DevicesPage = () => {
         {activeView === 'list' && (
           <div style={styles.section}>
             <h2>All Machines</h2>
-            {devices.length === 0 ? (
-              <p>No devices found.</p>
+            <div style={styles.filterBar}>
+              <input
+                placeholder="Search name, IP, OS, location"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={styles.filterInput}
+              />
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                style={styles.filterInput}
+              >
+                <option value="All">All Types</option>
+                {deviceTypes.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                style={styles.filterInput}
+              >
+                <option value="All">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="Retired">Retired</option>
+                <option value="In Repair">In Repair</option>
+                <option value="For Sale">For Sale</option>
+              </select>
+            </div>
+            {filteredDevices.length === 0 ? (
+              <p>{devices.length === 0 ? 'No devices found.' : 'No machines match current filters.'}</p>
             ) : (
               <>
                 {/* Edit Form Modal */}
@@ -371,7 +418,7 @@ const DevicesPage = () => {
                 </thead>
 
                 <tbody>
-                  {devices.map((device) => (
+                  {filteredDevices.map((device) => (
                     <tr key={device.id} style={styles.tableRow}>
                       <td style={styles.td}>{device.name}</td>
                       <td style={styles.td}>{device.ip_address}</td>
@@ -522,6 +569,19 @@ const styles = {
     borderCollapse: 'collapse',
     marginTop: '20px',
     fontSize: '13px',
+  },
+  filterBar: {
+    display: 'grid',
+    gridTemplateColumns: '2fr 1fr 1fr',
+    gap: '10px',
+    marginTop: '14px',
+    marginBottom: '8px',
+  },
+  filterInput: {
+    padding: '10px',
+    border: '1px solid #bdc3c7',
+    borderRadius: '4px',
+    fontSize: '14px',
   },
   tableHeader: {
     backgroundColor: '#ecf0f1',

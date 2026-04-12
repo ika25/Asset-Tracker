@@ -13,6 +13,9 @@ const SoftwarePage = () => {
   const [softwareList, setSoftwareList] = useState([]);
   const [activeView, setActiveView] = useState(viewParam === 'add' ? 'add' : 'list');
   const [editingId, setEditingId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [vendorFilter, setVendorFilter] = useState('All');
+  const [licenseFilter, setLicenseFilter] = useState('All');
 
   // State for new software form
   const [newSoftware, setNewSoftware] = useState({
@@ -136,6 +139,19 @@ const SoftwarePage = () => {
     setEditingId(null);
   };
 
+  const softwareVendors = [...new Set(softwareList.map((s) => s.vendor).filter(Boolean))];
+
+  const filteredSoftware = softwareList.filter((software) => {
+    const query = searchTerm.toLowerCase();
+    const matchesSearch =
+      (software.name || '').toLowerCase().includes(query) ||
+      (software.version || '').toLowerCase().includes(query) ||
+      (software.installed_on || '').toLowerCase().includes(query);
+    const matchesVendor = vendorFilter === 'All' || software.vendor === vendorFilter;
+    const matchesLicense = licenseFilter === 'All' || software.license_type === licenseFilter;
+    return matchesSearch && matchesVendor && matchesLicense;
+  });
+
   return (
     <div style={styles.container}>
       {/* MAIN CONTENT */}
@@ -207,8 +223,37 @@ const SoftwarePage = () => {
         {activeView === 'list' && (
           <div style={styles.section}>
             <h2>Software Inventory</h2>
-            {softwareList.length === 0 ? (
-              <p>No software tracked. Start adding software to track licenses and installations.</p>
+            <div style={styles.filterBar}>
+              <input
+                placeholder="Search name, version, installed on"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={styles.filterInput}
+              />
+              <select
+                value={vendorFilter}
+                onChange={(e) => setVendorFilter(e.target.value)}
+                style={styles.filterInput}
+              >
+                <option value="All">All Vendors</option>
+                {softwareVendors.map((vendor) => (
+                  <option key={vendor} value={vendor}>{vendor}</option>
+                ))}
+              </select>
+              <select
+                value={licenseFilter}
+                onChange={(e) => setLicenseFilter(e.target.value)}
+                style={styles.filterInput}
+              >
+                <option value="All">All License Types</option>
+                <option value="Commercial">Commercial</option>
+                <option value="Free">Free</option>
+                <option value="Trial">Trial</option>
+                <option value="Pro">Pro</option>
+              </select>
+            </div>
+            {filteredSoftware.length === 0 ? (
+              <p>{softwareList.length === 0 ? 'No software tracked. Start adding software to track licenses and installations.' : 'No software matches current filters.'}</p>
             ) : (
               <>
                 {/* Edit Form Modal */}
@@ -293,7 +338,7 @@ const SoftwarePage = () => {
                 </thead>
 
                 <tbody>
-                  {softwareList.map((software) => (
+                  {filteredSoftware.map((software) => (
                     <tr key={software.id} style={styles.tableRow}>
                       <td style={styles.td}>{software.name}</td>
                       <td style={styles.td}>{software.version || '-'}</td>
@@ -424,6 +469,19 @@ const styles = {
     borderCollapse: 'collapse',
     marginTop: '20px',
     fontSize: '13px',
+  },
+  filterBar: {
+    display: 'grid',
+    gridTemplateColumns: '2fr 1fr 1fr',
+    gap: '10px',
+    marginTop: '14px',
+    marginBottom: '8px',
+  },
+  filterInput: {
+    padding: '10px',
+    border: '1px solid #bdc3c7',
+    borderRadius: '4px',
+    fontSize: '14px',
   },
   tableHeader: {
     backgroundColor: '#ecf0f1',
