@@ -144,6 +144,12 @@ const HardwarePage = () => {
     setEditingId(null);
   };
 
+  const handleClearFilters = () => {
+    setSearchTerm('');
+    setTypeFilter('All');
+    setStatusFilter('All');
+  };
+
   const hardwareTypes = [...new Set(hardwareList.map((h) => h.type).filter(Boolean))];
 
   const filteredHardware = hardwareList.filter((hardware) => {
@@ -275,6 +281,9 @@ const HardwarePage = () => {
                 <option value="Retired">Retired</option>
                 <option value="For Sale">For Sale</option>
               </select>
+              <button onClick={handleClearFilters} style={styles.clearFilterButton}>
+                Clear Filters
+              </button>
             </div>
             {filteredHardware.length === 0 ? (
               <p>{hardwareList.length === 0 ? 'No hardware tracked. Start adding hardware items to track inventory and warranties.' : 'No hardware matches current filters.'}</p>
@@ -539,7 +548,7 @@ const styles = {
   },
   filterBar: {
     display: 'grid',
-    gridTemplateColumns: '2fr 1fr 1fr',
+    gridTemplateColumns: '2fr 1fr 1fr auto',
     gap: '10px',
     marginTop: '14px',
     marginBottom: '8px',
@@ -549,6 +558,17 @@ const styles = {
     border: '1px solid #bdc3c7',
     borderRadius: '4px',
     fontSize: '14px',
+  },
+  clearFilterButton: {
+    padding: '10px 14px',
+    backgroundColor: '#95a5a6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: 'bold',
+    whiteSpace: 'nowrap',
   },
   tableHeader: {
     backgroundColor: '#ecf0f1',

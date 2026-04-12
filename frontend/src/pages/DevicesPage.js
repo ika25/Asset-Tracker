@@ -148,6 +148,12 @@ const DevicesPage = () => {
     setEditingId(null);
   };
 
+  const handleClearFilters = () => {
+    setSearchTerm('');
+    setTypeFilter('All');
+    setStatusFilter('All');
+  };
+
   const deviceTypes = [...new Set(devices.map((d) => d.type).filter(Boolean))];
 
   const filteredDevices = devices.filter((device) => {
@@ -294,6 +300,9 @@ const DevicesPage = () => {
                 <option value="In Repair">In Repair</option>
                 <option value="For Sale">For Sale</option>
               </select>
+              <button onClick={handleClearFilters} style={styles.clearFilterButton}>
+                Clear Filters
+              </button>
             </div>
             {filteredDevices.length === 0 ? (
               <p>{devices.length === 0 ? 'No devices found.' : 'No machines match current filters.'}</p>
@@ -572,7 +581,7 @@ const styles = {
   },
   filterBar: {
     display: 'grid',
-    gridTemplateColumns: '2fr 1fr 1fr',
+    gridTemplateColumns: '2fr 1fr 1fr auto',
     gap: '10px',
     marginTop: '14px',
     marginBottom: '8px',
@@ -582,6 +591,17 @@ const styles = {
     border: '1px solid #bdc3c7',
     borderRadius: '4px',
     fontSize: '14px',
+  },
+  clearFilterButton: {
+    padding: '10px 14px',
+    backgroundColor: '#95a5a6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: 'bold',
+    whiteSpace: 'nowrap',
   },
   tableHeader: {
     backgroundColor: '#ecf0f1',
