@@ -29,6 +29,8 @@ const FloorPage = () => {
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [showGrid, setShowGrid] = useState(true);
+  const [hoveredDevice, setHoveredDevice] = useState(null);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [mapSize, setMapSize] = useState({
     width: BASE_MAP_WIDTH,
     height: BASE_MAP_HEIGHT,
@@ -224,6 +226,13 @@ const FloorPage = () => {
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const updateTooltipPosition = (e) => {
+    const stage = e.target.getStage();
+    const pointer = stage?.getPointerPosition();
+    if (!pointer) return;
+    setTooltipPos({ x: pointer.x + 14, y: pointer.y + 14 });
   };
 
   // =========================
@@ -539,6 +548,13 @@ const FloorPage = () => {
                     offsetY={22}
                     draggable
                     onClick={() => setSelectedDevice(device)}
+                    onMouseEnter={(e) => {
+                      setHoveredDevice(device);
+                      updateTooltipPosition(e);
+                    }}
+                    onMouseMove={updateTooltipPosition}
+                    onMouseLeave={() => setHoveredDevice(null)}
+                    onDragStart={() => setHoveredDevice(null)}
                     onDragEnd={(e) => handleDragEnd(e, device)}
                   >
                     <Text
@@ -573,6 +589,22 @@ const FloorPage = () => {
               </Group>
             </Layer>
           </Stage>
+
+          {hoveredDevice && (
+            <div
+              style={{
+                ...styles.tooltip,
+                left: tooltipPos.x,
+                top: tooltipPos.y,
+              }}
+            >
+              <div style={styles.tooltipTitle}>{hoveredDevice.name || 'Unnamed Device'}</div>
+              <div>IP: {hoveredDevice.ip_address || 'N/A'}</div>
+              <div>Type: {hoveredDevice.type || 'N/A'}</div>
+              <div>Status: {hoveredDevice.status || 'N/A'}</div>
+              <div>Location: {hoveredDevice.location || 'N/A'}</div>
+            </div>
+          )}
           </div>
 
           {/* Instruction Text */}
@@ -729,10 +761,30 @@ const styles = {
     width: '100%',
     height: '100%',
     minHeight: '420px',
+    position: 'relative',
     border: '1px solid #dfe6e9',
     borderRadius: '8px',
     overflow: 'hidden',
     backgroundColor: '#ffffff',
+  },
+  tooltip: {
+    position: 'absolute',
+    transform: 'translate(0, 0)',
+    pointerEvents: 'none',
+    backgroundColor: 'rgba(24, 32, 43, 0.94)',
+    color: '#fff',
+    padding: '10px 12px',
+    borderRadius: '8px',
+    fontSize: '12px',
+    lineHeight: '1.4',
+    boxShadow: '0 8px 20px rgba(0,0,0,0.25)',
+    maxWidth: '240px',
+    zIndex: 10,
+  },
+  tooltipTitle: {
+    fontSize: '13px',
+    fontWeight: '700',
+    marginBottom: '4px',
   },
   instruction: {
     marginTop: '20px',
