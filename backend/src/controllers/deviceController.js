@@ -22,7 +22,8 @@ const DEVICE_SELECT = `
     dd.disk_space,
     dd.device_age,
     dd.serial_number,
-    dd.warranty_expiry,
+    dd.user_name,
+    dd.install_date,
     dd.location
   FROM devices d
   LEFT JOIN device_details dd ON dd.device_id = d.id
@@ -63,11 +64,12 @@ export const createDevice = async (req, res) => {
     floor_id,
     icon,
     os,
+    user_name,
     ram,
     disk_space,
     device_age,
     serial_number,
-    warranty_expiry,
+    install_date,
     location,
   } = req.body;
 
@@ -95,25 +97,27 @@ export const createDevice = async (req, res) => {
     const deviceId = deviceResult.rows[0].id;
 
     await client.query(
-      `INSERT INTO device_details (device_id, os, ram, disk_space, device_age, serial_number, warranty_expiry, location)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO device_details (device_id, os, user_name, ram, disk_space, device_age, serial_number, install_date, location)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (device_id) DO UPDATE SET
          os = EXCLUDED.os,
+         user_name = EXCLUDED.user_name,
          ram = EXCLUDED.ram,
          disk_space = EXCLUDED.disk_space,
          device_age = EXCLUDED.device_age,
          serial_number = EXCLUDED.serial_number,
-         warranty_expiry = EXCLUDED.warranty_expiry,
+         install_date = EXCLUDED.install_date,
          location = EXCLUDED.location,
          updated_at = NOW()`,
       [
         deviceId,
         normalizeValue(os),
+        normalizeValue(user_name),
         normalizeValue(ram),
         normalizeValue(disk_space),
         normalizeValue(device_age),
         normalizeValue(serial_number),
-        normalizeValue(warranty_expiry),
+        normalizeValue(install_date),
         normalizeValue(location),
       ]
     );
@@ -175,11 +179,12 @@ export const updateDevice = async (req, res) => {
       floor_id: Object.prototype.hasOwnProperty.call(req.body, 'floor_id') ? normalizeValue(req.body.floor_id) : existing.floor_id,
       icon: Object.prototype.hasOwnProperty.call(req.body, 'icon') ? normalizeValue(req.body.icon) : existing.icon,
       os: Object.prototype.hasOwnProperty.call(req.body, 'os') ? normalizeValue(req.body.os) : existing.os,
+      user_name: Object.prototype.hasOwnProperty.call(req.body, 'user_name') ? normalizeValue(req.body.user_name) : existing.user_name,
       ram: Object.prototype.hasOwnProperty.call(req.body, 'ram') ? normalizeValue(req.body.ram) : existing.ram,
       disk_space: Object.prototype.hasOwnProperty.call(req.body, 'disk_space') ? normalizeValue(req.body.disk_space) : existing.disk_space,
       device_age: Object.prototype.hasOwnProperty.call(req.body, 'device_age') ? normalizeValue(req.body.device_age) : existing.device_age,
       serial_number: Object.prototype.hasOwnProperty.call(req.body, 'serial_number') ? normalizeValue(req.body.serial_number) : existing.serial_number,
-      warranty_expiry: Object.prototype.hasOwnProperty.call(req.body, 'warranty_expiry') ? normalizeValue(req.body.warranty_expiry) : existing.warranty_expiry,
+      install_date: Object.prototype.hasOwnProperty.call(req.body, 'install_date') ? normalizeValue(req.body.install_date) : existing.install_date,
       location: Object.prototype.hasOwnProperty.call(req.body, 'location') ? normalizeValue(req.body.location) : existing.location,
     };
 
@@ -208,25 +213,27 @@ export const updateDevice = async (req, res) => {
     );
 
     await client.query(
-      `INSERT INTO device_details (device_id, os, ram, disk_space, device_age, serial_number, warranty_expiry, location)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO device_details (device_id, os, user_name, ram, disk_space, device_age, serial_number, install_date, location)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (device_id) DO UPDATE SET
          os = EXCLUDED.os,
+         user_name = EXCLUDED.user_name,
          ram = EXCLUDED.ram,
          disk_space = EXCLUDED.disk_space,
          device_age = EXCLUDED.device_age,
          serial_number = EXCLUDED.serial_number,
-         warranty_expiry = EXCLUDED.warranty_expiry,
+         install_date = EXCLUDED.install_date,
          location = EXCLUDED.location,
          updated_at = NOW()`,
       [
         id,
         nextDevice.os,
+        nextDevice.user_name,
         nextDevice.ram,
         nextDevice.disk_space,
         nextDevice.device_age,
         nextDevice.serial_number,
-        nextDevice.warranty_expiry,
+        nextDevice.install_date,
         nextDevice.location,
       ]
     );

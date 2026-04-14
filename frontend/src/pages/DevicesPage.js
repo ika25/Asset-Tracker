@@ -27,6 +27,7 @@ const DevicesPage = () => {
   // State for new device form
   const [newDevice, setNewDevice] = useState({
     name: '',
+    user_name: '',
     ip_address: '',
     type: '',
     icon: '💻',
@@ -36,7 +37,7 @@ const DevicesPage = () => {
     disk_space: '',
     device_age: '',
     serial_number: '',
-    warranty_expiry: '',
+    install_date: '',
     location: '',
     status: 'Active',
   });
@@ -44,6 +45,7 @@ const DevicesPage = () => {
   // State for editing
   const [editingData, setEditingData] = useState({
     name: '',
+    user_name: '',
     ip_address: '',
     type: '',
     icon: '💻',
@@ -53,7 +55,7 @@ const DevicesPage = () => {
     disk_space: '',
     device_age: '',
     serial_number: '',
-    warranty_expiry: '',
+    install_date: '',
     location: '',
     status: 'Active',
   });
@@ -107,7 +109,7 @@ const DevicesPage = () => {
       delete payload.includeOnMap;
 
       await createDevice(payload); // send device data to backend
-      setNewDevice({ name: '', ip_address: '', type: '', icon: '💻', includeOnMap: false, os: '', ram: '', disk_space: '', device_age: '', serial_number: '', warranty_expiry: '', location: '', status: 'Active' }); // clear form
+      setNewDevice({ name: '', user_name: '', ip_address: '', type: '', icon: '💻', includeOnMap: false, os: '', ram: '', disk_space: '', device_age: '', serial_number: '', install_date: '', location: '', status: 'Active' }); // clear form
       // Don't change view - let the sidebar handle navigation
       fetchDevices(); // refresh list
     } catch (err) {
@@ -135,7 +137,7 @@ const DevicesPage = () => {
     setEditingData({
       ...device,
       includeOnMap: device.x_position !== null && device.x_position !== undefined && device.y_position !== null && device.y_position !== undefined,
-      warranty_expiry: normalizeDateValue(device.warranty_expiry),
+      install_date: normalizeDateValue(device.install_date),
     });
   };
 
@@ -214,6 +216,13 @@ const DevicesPage = () => {
                 style={styles.input}
               />
               <input
+                name="user_name"
+                placeholder="User Name"
+                value={newDevice.user_name}
+                onChange={handleChange}
+                style={styles.input}
+              />
+              <input
                 name="ip_address"
                 placeholder="IP Address"
                 value={newDevice.ip_address}
@@ -273,10 +282,10 @@ const DevicesPage = () => {
                 style={styles.input}
               />
               <input
-                name="warranty_expiry"
-                placeholder="Warranty Expiry Date (YYYY-MM-DD)"
+                name="install_date"
+                placeholder="Install Date (YYYY-MM-DD)"
                 type="date"
-                value={newDevice.warranty_expiry}
+                value={newDevice.install_date}
                 onChange={handleChange}
                 style={styles.input}
               />
@@ -369,6 +378,13 @@ const DevicesPage = () => {
                         style={styles.input}
                       />
                       <input
+                        name="user_name"
+                        placeholder="User Name"
+                        value={editingData.user_name || ''}
+                        onChange={handleEditChange}
+                        style={styles.input}
+                      />
+                      <input
                         name="ip_address"
                         placeholder="IP Address"
                         value={editingData.ip_address}
@@ -428,9 +444,9 @@ const DevicesPage = () => {
                         style={styles.input}
                       />
                       <input
-                        name="warranty_expiry"
+                        name="install_date"
                         type="date"
-                        value={editingData.warranty_expiry}
+                        value={editingData.install_date || ''}
                         onChange={handleEditChange}
                         style={styles.input}
                       />
@@ -480,6 +496,7 @@ const DevicesPage = () => {
                   <tr style={styles.tableHeader}>
                     <th style={styles.th}>Icon</th>
                     <th style={styles.th}>Name</th>
+                    <th style={styles.th}>User Name</th>
                     <th style={styles.th}>IP Address</th>
                     <th style={styles.th}>Type</th>
                       <th style={styles.th}>OS</th>
@@ -487,7 +504,7 @@ const DevicesPage = () => {
                       <th style={styles.th}>Disk</th>
                       <th style={styles.th}>Age</th>
                       <th style={styles.th}>Serial #</th>
-                      <th style={styles.th}>Warranty</th>
+                      <th style={styles.th}>Install Date</th>
                       <th style={styles.th}>Location</th>
                     <th style={styles.th}>Status</th>
                     <th style={styles.th}>Actions</th>
@@ -499,6 +516,7 @@ const DevicesPage = () => {
                     <tr key={device.id} style={styles.tableRow}>
                       <td style={styles.td}>{device.icon || '💻'}</td>
                       <td style={styles.td}>{device.name}</td>
+                      <td style={styles.td}>{device.user_name || '-'}</td>
                       <td style={styles.td}>{device.ip_address}</td>
                       <td style={styles.td}>{device.type}</td>
                       <td style={styles.td}>{device.os || '-'}</td>
@@ -506,20 +524,7 @@ const DevicesPage = () => {
                       <td style={styles.td}>{device.disk_space || '-'}</td>
                       <td style={styles.td}>{device.device_age || '-'}</td>
                       <td style={styles.td}>{device.serial_number || '-'}</td>
-                      <td style={styles.td}>
-                        <span
-                          style={{
-                            ...styles.warranty,
-                            backgroundColor:
-                              device.warranty_expiry &&
-                              new Date(device.warranty_expiry) < new Date()
-                                ? '#e74c3c'
-                                : '#27ae60',
-                          }}
-                        >
-                          {formatDate(device.warranty_expiry)}
-                        </span>
-                      </td>
+                      <td style={styles.td}>{formatDate(device.install_date)}</td>
                       <td style={styles.td}>{device.location || '-'}</td>
                       <td style={styles.td}>
                         <span
