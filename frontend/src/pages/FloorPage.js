@@ -402,8 +402,8 @@ const FloorPage = () => {
   // =========================
   const stats = {
     total: devices.length,
-    online: devices.filter((d) => d.status === 'online').length,
-    offline: devices.filter((d) => d.status === 'offline').length,
+    active: devices.filter((d) => d.status === 'Active').length,
+    inactive: devices.filter((d) => d.status === 'Inactive').length,
   };
 
   return (
@@ -415,15 +415,15 @@ const FloorPage = () => {
           <span style={styles.statValue}>{stats.total}</span>
         </div>
         <div style={styles.statItem}>
-          <span style={styles.statLabel}>Online:</span>
+          <span style={styles.statLabel}>Active:</span>
           <span style={{ ...styles.statValue, color: '#27ae60' }}>
-            {stats.online}
+            {stats.active}
           </span>
         </div>
         <div style={styles.statItem}>
-          <span style={styles.statLabel}>Offline:</span>
+          <span style={styles.statLabel}>Inactive:</span>
           <span style={{ ...styles.statValue, color: '#e74c3c' }}>
-            {stats.offline}
+            {stats.inactive}
           </span>
         </div>
       </div>
@@ -474,8 +474,11 @@ const FloorPage = () => {
             title="Filter by status"
           >
             <option value="">All Status</option>
-            <option value="online">Online</option>
-            <option value="offline">Offline</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+            <option value="Retired">Retired</option>
+            <option value="In Repair">In Repair</option>
+            <option value="For Sale">For Sale</option>
           </select>
         </div>
 
@@ -553,8 +556,17 @@ const FloorPage = () => {
                 const y = logicalY * mapScaleY;
                 const icon = device.icon || '💻';
 
-                const status = (device.status || '').toLowerCase();
-                const dotColor = status === 'online' ? '#2ecc71' : status === 'offline' ? '#e74c3c' : '#95a5a6';
+                const status = device.status || '';
+                const dotColor =
+                  status === 'Active'
+                    ? '#2ecc71'
+                    : status === 'Inactive'
+                    ? '#e74c3c'
+                    : status === 'In Repair'
+                    ? '#f39c12'
+                    : status === 'For Sale'
+                    ? '#3498db'
+                    : '#95a5a6';
 
                 return (
                   <Group

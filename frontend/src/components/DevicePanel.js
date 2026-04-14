@@ -126,13 +126,16 @@ const DevicePanel = ({ device, onClose, refreshDevices }) => {
               <label style={styles.label}>Status</label>
               <select
                 name="status"
-                value={formData.status || 'offline'}
+                value={formData.status || 'Active'}
                 onChange={handleChange}
                 disabled={loading}
                 style={styles.input}
               >
-                <option value="online">Online</option>
-                <option value="offline">Offline</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="Retired">Retired</option>
+                <option value="In Repair">In Repair</option>
+                <option value="For Sale">For Sale</option>
               </select>
             </div>
 
