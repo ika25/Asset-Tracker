@@ -30,6 +30,7 @@ const DevicesPage = () => {
     ip_address: '',
     type: '',
     icon: '💻',
+    includeOnMap: false,
     os: '',
     ram: '',
     disk_space: '',
@@ -46,6 +47,7 @@ const DevicesPage = () => {
     ip_address: '',
     type: '',
     icon: '💻',
+    includeOnMap: false,
     os: '',
     ram: '',
     disk_space: '',
@@ -85,9 +87,10 @@ const DevicesPage = () => {
   // Handle input changes
   // =========================
   const handleChange = (e) => {
+    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
     setNewDevice({
       ...newDevice,
-      [e.target.name]: e.target.value,
+      [e.target.name]: value,
     });
   };
 
@@ -96,8 +99,15 @@ const DevicesPage = () => {
   // =========================
   const handleAddDevice = async () => {
     try {
-      await createDevice(newDevice); // send to backend
-      setNewDevice({ name: '', ip_address: '', type: '', icon: '💻', os: '', ram: '', disk_space: '', device_age: '', serial_number: '', warranty_expiry: '', location: '', status: 'Active' }); // clear form
+      const payload = {
+        ...newDevice,
+        x_position: newDevice.includeOnMap ? 100 : null,
+        y_position: newDevice.includeOnMap ? 100 : null,
+      };
+      delete payload.includeOnMap;
+
+      await createDevice(payload); // send device data to backend
+      setNewDevice({ name: '', ip_address: '', type: '', icon: '💻', includeOnMap: false, os: '', ram: '', disk_space: '', device_age: '', serial_number: '', warranty_expiry: '', location: '', status: 'Active' }); // clear form
       // Don't change view - let the sidebar handle navigation
       fetchDevices(); // refresh list
     } catch (err) {
@@ -124,6 +134,7 @@ const DevicesPage = () => {
     setEditingId(device.id);
     setEditingData({
       ...device,
+      includeOnMap: device.x_position !== null && device.x_position !== undefined && device.y_position !== null && device.y_position !== undefined,
       warranty_expiry: normalizeDateValue(device.warranty_expiry),
     });
   };
@@ -132,9 +143,10 @@ const DevicesPage = () => {
   // Handle edit input changes
   // =========================
   const handleEditChange = (e) => {
+    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
     setEditingData({
       ...editingData,
-      [e.target.name]: e.target.value,
+      [e.target.name]: value,
     });
   };
 
@@ -143,7 +155,14 @@ const DevicesPage = () => {
   // =========================
   const handleSaveEdit = async () => {
     try {
-      await updateDevice(editingId, editingData); // update API
+      const payload = {
+        ...editingData,
+        x_position: editingData.includeOnMap ? (editingData.x_position ?? 100) : null,
+        y_position: editingData.includeOnMap ? (editingData.y_position ?? 100) : null,
+      };
+      delete payload.includeOnMap;
+
+      await updateDevice(editingId, payload); // update API
       setEditingId(null);
       fetchDevices(); // refresh list
     } catch (err) {
@@ -280,6 +299,15 @@ const DevicesPage = () => {
                 <option value="In Repair">In Repair</option>
                 <option value="For Sale">For Sale</option>
               </select>
+              <label style={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  name="includeOnMap"
+                  checked={newDevice.includeOnMap}
+                  onChange={handleChange}
+                />
+                Add this device to the floor map now
+              </label>
               <button onClick={handleAddDevice} style={styles.submitButton}>
                 Add Device
               </button>
@@ -425,6 +453,15 @@ const DevicesPage = () => {
                         <option value="In Repair">In Repair</option>
                         <option value="For Sale">For Sale</option>
                       </select>
+                      <label style={styles.checkboxLabel}>
+                        <input
+                          type="checkbox"
+                          name="includeOnMap"
+                          checked={!!editingData.includeOnMap}
+                          onChange={handleEditChange}
+                        />
+                        Show this device on the floor map
+                      </label>
                       <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
                         <button onClick={handleSaveEdit} style={styles.submitButton}>
                           Save Changes
@@ -561,6 +598,13 @@ const styles = {
     border: '1px solid #bdc3c7',
     borderRadius: '4px',
     fontSize: '14px',
+  },
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '14px',
+    color: '#2c3e50',
   },
   submitButton: {
     padding: '10px',

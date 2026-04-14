@@ -538,13 +538,17 @@ const FloorPage = () => {
               )}
 
               {/* Devices */}
-              {filteredDevices.map((device) => {
+              {filteredDevices.filter((device) => {
+                const hasX = device.x_position !== null && device.x_position !== undefined && device.x_position !== '';
+                const hasY = device.y_position !== null && device.y_position !== undefined && device.y_position !== '';
+                return hasX && hasY;
+              }).map((device) => {
                 const hasX = device.x_position !== null && device.x_position !== undefined && device.x_position !== '';
                 const hasY = device.y_position !== null && device.y_position !== undefined && device.y_position !== '';
                 const rawX = hasX ? Number(device.x_position) : NaN;
                 const rawY = hasY ? Number(device.y_position) : NaN;
-                const logicalX = Number.isFinite(rawX) ? rawX : 100;
-                const logicalY = Number.isFinite(rawY) ? rawY : 100;
+                const logicalX = Number.isFinite(rawX) ? rawX : 0;
+                const logicalY = Number.isFinite(rawY) ? rawY : 0;
                 const x = logicalX * mapScaleX;
                 const y = logicalY * mapScaleY;
                 const icon = device.icon || '💻';
