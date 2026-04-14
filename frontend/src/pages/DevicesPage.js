@@ -8,8 +8,14 @@ import {
   deleteDevice,
   updateDevice,
 } from '../api/deviceApi';
+import {
+  getCategoryLabel,
+  getVisibleDeviceFields,
+  sanitizeDevicePayload,
+} from '../utils/deviceFormConfig';
 
 const ICON_OPTIONS = ['💻', '🖥️', '🖨️', '🛜', '📡', '🗄️', '📱', '📷'];
+const DEVICE_TYPE_OPTIONS = ['PC', 'Laptop', 'Printer', 'Router', 'Switch', 'Server', 'Phone', 'Camera', 'Tablet', 'Other'];
 
 const DevicesPage = () => {
   // Get URL query parameters
@@ -84,6 +90,8 @@ const DevicesPage = () => {
 
   const normalizeDateValue = (value) => (value ? String(value).split('T')[0] : '');
   const formatDate = (value) => normalizeDateValue(value) || '-';
+  const newDeviceFields = getVisibleDeviceFields(newDevice);
+  const editingFields = getVisibleDeviceFields(editingData);
 
   // =========================
   // Handle input changes
@@ -101,11 +109,11 @@ const DevicesPage = () => {
   // =========================
   const handleAddDevice = async () => {
     try {
-      const payload = {
+      const payload = sanitizeDevicePayload({
         ...newDevice,
         x_position: newDevice.includeOnMap ? 100 : null,
         y_position: newDevice.includeOnMap ? 100 : null,
-      };
+      });
       delete payload.includeOnMap;
 
       await createDevice(payload); // send device data to backend
@@ -157,11 +165,11 @@ const DevicesPage = () => {
   // =========================
   const handleSaveEdit = async () => {
     try {
-      const payload = {
+      const payload = sanitizeDevicePayload({
         ...editingData,
         x_position: editingData.includeOnMap ? (editingData.x_position ?? 100) : null,
         y_position: editingData.includeOnMap ? (editingData.y_position ?? 100) : null,
-      };
+      });
       delete payload.includeOnMap;
 
       await updateDevice(editingId, payload); // update API
@@ -185,7 +193,7 @@ const DevicesPage = () => {
     setStatusFilter('All');
   };
 
-  const deviceTypes = [...new Set(devices.map((d) => d.type).filter(Boolean))];
+  const deviceTypes = [...new Set([...DEVICE_TYPE_OPTIONS, ...devices.map((d) => d.type).filter(Boolean)])];
 
   const filteredDevices = devices.filter((device) => {
     const query = searchTerm.toLowerCase();
@@ -215,27 +223,17 @@ const DevicesPage = () => {
                 onChange={handleChange}
                 style={styles.input}
               />
-              <input
-                name="user_name"
-                placeholder="User Name"
-                value={newDevice.user_name}
-                onChange={handleChange}
-                style={styles.input}
-              />
-              <input
-                name="ip_address"
-                placeholder="IP Address"
-                value={newDevice.ip_address}
-                onChange={handleChange}
-                style={styles.input}
-              />
-              <input
+              <select
                 name="type"
-                placeholder="Type (PC, Laptop, Printer...)"
                 value={newDevice.type}
                 onChange={handleChange}
                 style={styles.input}
-              />
+              >
+                <option value="">Select device type</option>
+                {DEVICE_TYPE_OPTIONS.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
               <select
                 name="icon"
                 value={newDevice.icon}
@@ -246,56 +244,89 @@ const DevicesPage = () => {
                   <option key={icon} value={icon}>{icon}</option>
                 ))}
               </select>
-              <input
-                name="os"
-                placeholder="Operating System (Windows 10, macOS Monterey...)"
-                value={newDevice.os}
-                onChange={handleChange}
-                style={styles.input}
-              />
-              <input
-                name="ram"
-                placeholder="RAM (e.g., 16GB)"
-                value={newDevice.ram}
-                onChange={handleChange}
-                style={styles.input}
-              />
-              <input
-                name="disk_space"
-                placeholder="Disk Space (e.g., 512GB)"
-                value={newDevice.disk_space}
-                onChange={handleChange}
-                style={styles.input}
-              />
-              <input
-                name="device_age"
-                placeholder="Device Age (e.g., 2 years)"
-                value={newDevice.device_age}
-                onChange={handleChange}
-                style={styles.input}
-              />
-              <input
-                name="serial_number"
-                placeholder="Serial Number"
-                value={newDevice.serial_number}
-                onChange={handleChange}
-                style={styles.input}
-              />
-              <input
-                name="install_date"
-                placeholder="Install Date (YYYY-MM-DD)"
-                type="date"
-                value={newDevice.install_date}
-                onChange={handleChange}
-                style={styles.input}
-              />
-              <input
-                name="location"
-                placeholder="Location / Department"
-                value={newDevice.location}
-                onChange={handleChange}
-                style={styles.input}
-              />
+              <div style={styles.formHint}>{getCategoryLabel(newDevice)}</div>
+              {newDeviceFields.has('user_name') && (
+                <input
+                  name="user_name"
+                  placeholder="User Name"
+                  value={newDevice.user_name}
+                  onChange={handleChange}
+                  style={styles.input}
+                />
+              )}
+              {newDeviceFields.has('ip_address') && (
+                <input
+                  name="ip_address"
+                  placeholder="IP Address"
+                  value={newDevice.ip_address}
+                  onChange={handleChange}
+                  style={styles.input}
+                />
+              )}
+              {newDeviceFields.has('os') && (
+                <input
+                  name="os"
+                  placeholder="Operating System (Windows 10, macOS Monterey...)"
+                  value={newDevice.os}
+                  onChange={handleChange}
+                  style={styles.input}
+                />
+              )}
+              {newDeviceFields.has('ram') && (
+                <input
+                  name="ram"
+                  placeholder="RAM (e.g., 16GB)"
+                  value={newDevice.ram}
+                  onChange={handleChange}
+                  style={styles.input}
+                />
+              )}
+              {newDeviceFields.has('disk_space') && (
+                <input
+                  name="disk_space"
+                  placeholder="Disk Space (e.g., 512GB)"
+                  value={newDevice.disk_space}
+                  onChange={handleChange}
+                  style={styles.input}
+                />
+              )}
+              {newDeviceFields.has('device_age') && (
+                <input
+                  name="device_age"
+                  placeholder="Device Age (e.g., 2 years)"
+                  value={newDevice.device_age}
+                  onChange={handleChange}
+                  style={styles.input}
+                />
+              )}
+              {newDeviceFields.has('serial_number') && (
+                <input
+                  name="serial_number"
+                  placeholder="Serial Number"
+                  value={newDevice.serial_number}
+                  onChange={handleChange}
+                  style={styles.input}
+                />
+              )}
+              {newDeviceFields.has('install_date') && (
+                <input
+                  name="install_date"
+                  placeholder="Install Date (YYYY-MM-DD)"
+                  type="date"
+                  value={newDevice.install_date}
+                  onChange={handleChange}
+                  style={styles.input}
+                />
+              )}
+              {newDeviceFields.has('location') && (
+                <input
+                  name="location"
+                  placeholder="Location / Department"
+                  value={newDevice.location}
+                  onChange={handleChange}
+                  style={styles.input}
+                />
+              )}
               <select
                 name="status"
                 value={newDevice.status}
@@ -377,27 +408,17 @@ const DevicesPage = () => {
                         onChange={handleEditChange}
                         style={styles.input}
                       />
-                      <input
-                        name="user_name"
-                        placeholder="User Name"
-                        value={editingData.user_name || ''}
-                        onChange={handleEditChange}
-                        style={styles.input}
-                      />
-                      <input
-                        name="ip_address"
-                        placeholder="IP Address"
-                        value={editingData.ip_address}
-                        onChange={handleEditChange}
-                        style={styles.input}
-                      />
-                      <input
+                      <select
                         name="type"
-                        placeholder="Type"
                         value={editingData.type}
                         onChange={handleEditChange}
                         style={styles.input}
-                      />
+                      >
+                        <option value="">Select device type</option>
+                        {DEVICE_TYPE_OPTIONS.map((type) => (
+                          <option key={type} value={type}>{type}</option>
+                        ))}
+                      </select>
                       <select
                         name="icon"
                         value={editingData.icon || '💻'}
@@ -408,55 +429,88 @@ const DevicesPage = () => {
                           <option key={icon} value={icon}>{icon}</option>
                         ))}
                       </select>
-                      <input
-                        name="os"
-                        placeholder="Operating System"
-                        value={editingData.os}
-                        onChange={handleEditChange}
-                        style={styles.input}
-                      />
-                      <input
-                        name="ram"
-                        placeholder="RAM"
-                        value={editingData.ram}
-                        onChange={handleEditChange}
-                        style={styles.input}
-                      />
-                      <input
-                        name="disk_space"
-                        placeholder="Disk Space"
-                        value={editingData.disk_space}
-                        onChange={handleEditChange}
-                        style={styles.input}
-                      />
-                      <input
-                        name="device_age"
-                        placeholder="Device Age"
-                        value={editingData.device_age}
-                        onChange={handleEditChange}
-                        style={styles.input}
-                      />
-                      <input
-                        name="serial_number"
-                        placeholder="Serial Number"
-                        value={editingData.serial_number}
-                        onChange={handleEditChange}
-                        style={styles.input}
-                      />
-                      <input
-                        name="install_date"
-                        type="date"
-                        value={editingData.install_date || ''}
-                        onChange={handleEditChange}
-                        style={styles.input}
-                      />
-                      <input
-                        name="location"
-                        placeholder="Location"
-                        value={editingData.location}
-                        onChange={handleEditChange}
-                        style={styles.input}
-                      />
+                      <div style={styles.formHint}>{getCategoryLabel(editingData)}</div>
+                      {editingFields.has('user_name') && (
+                        <input
+                          name="user_name"
+                          placeholder="User Name"
+                          value={editingData.user_name || ''}
+                          onChange={handleEditChange}
+                          style={styles.input}
+                        />
+                      )}
+                      {editingFields.has('ip_address') && (
+                        <input
+                          name="ip_address"
+                          placeholder="IP Address"
+                          value={editingData.ip_address}
+                          onChange={handleEditChange}
+                          style={styles.input}
+                        />
+                      )}
+                      {editingFields.has('os') && (
+                        <input
+                          name="os"
+                          placeholder="Operating System"
+                          value={editingData.os}
+                          onChange={handleEditChange}
+                          style={styles.input}
+                        />
+                      )}
+                      {editingFields.has('ram') && (
+                        <input
+                          name="ram"
+                          placeholder="RAM"
+                          value={editingData.ram}
+                          onChange={handleEditChange}
+                          style={styles.input}
+                        />
+                      )}
+                      {editingFields.has('disk_space') && (
+                        <input
+                          name="disk_space"
+                          placeholder="Disk Space"
+                          value={editingData.disk_space}
+                          onChange={handleEditChange}
+                          style={styles.input}
+                        />
+                      )}
+                      {editingFields.has('device_age') && (
+                        <input
+                          name="device_age"
+                          placeholder="Device Age"
+                          value={editingData.device_age}
+                          onChange={handleEditChange}
+                          style={styles.input}
+                        />
+                      )}
+                      {editingFields.has('serial_number') && (
+                        <input
+                          name="serial_number"
+                          placeholder="Serial Number"
+                          value={editingData.serial_number}
+                          onChange={handleEditChange}
+                          style={styles.input}
+                        />
+                      )}
+                      {editingFields.has('install_date') && (
+                        <input
+                          name="install_date"
+                          type="date"
+                          value={editingData.install_date || ''}
+                          onChange={handleEditChange}
+                          style={styles.input}
+                        />
+                      )}
+                      {editingFields.has('location') && (
+                        <input
+                          name="location"
+                          placeholder="Location"
+                          value={editingData.location}
+                          onChange={handleEditChange}
+                          style={styles.input}
+                        />
+                      )}
                       <select
                         name="status"
                         value={editingData.status}
@@ -610,6 +664,12 @@ const styles = {
     gap: '8px',
     fontSize: '14px',
     color: '#2c3e50',
+  },
+  formHint: {
+    fontSize: '12px',
+    color: '#6c7a89',
+    fontWeight: '600',
+    marginTop: '-2px',
   },
   submitButton: {
     padding: '10px',

@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
 import { updateDevice, deleteDevice } from '../api/deviceApi';
+import {
+  getCategoryLabel,
+  getVisibleDeviceFields,
+  sanitizeDevicePayload,
+} from '../utils/deviceFormConfig';
 
 const ICON_OPTIONS = ['💻', '🖥️', '🖨️', '🛜', '📡', '🗄️', '📱', '📷'];
 
@@ -10,6 +15,7 @@ const DevicePanel = ({ device, onClose, refreshDevices }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const visibleFields = getVisibleDeviceFields(formData);
 
   // Handle input
   const handleChange = (e) => {
@@ -26,7 +32,7 @@ const DevicePanel = ({ device, onClose, refreshDevices }) => {
     setError('');
     setSuccess('');
     try {
-      await updateDevice(device.id, formData);
+      await updateDevice(device.id, sanitizeDevicePayload(formData));
       setSuccess('✓ Device updated successfully!');
       setTimeout(() => {
         refreshDevices();
@@ -113,14 +119,135 @@ const DevicePanel = ({ device, onClose, refreshDevices }) => {
 
             <div style={styles.formGroup}>
               <label style={styles.label}>IP Address</label>
+              {visibleFields.has('ip_address') ? (
+                <input
+                  name="ip_address"
+                  value={formData.ip_address || ''}
+                  onChange={handleChange}
+                  disabled={loading}
+                  style={styles.input}
+                />
+              ) : (
+                <div style={styles.helperText}>Not relevant for this device type.</div>
+              )}
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Type</label>
               <input
-                name="ip_address"
-                value={formData.ip_address || ''}
+                name="type"
+                value={formData.type || ''}
                 onChange={handleChange}
                 disabled={loading}
                 style={styles.input}
               />
+              <div style={styles.typeHint}>{getCategoryLabel(formData)}</div>
             </div>
+
+            {visibleFields.has('user_name') && (
+              <div style={styles.formGroup}>
+                <label style={styles.label}>User Name</label>
+                <input
+                  name="user_name"
+                  value={formData.user_name || ''}
+                  onChange={handleChange}
+                  disabled={loading}
+                  style={styles.input}
+                />
+              </div>
+            )}
+
+            {visibleFields.has('os') && (
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Operating System</label>
+                <input
+                  name="os"
+                  value={formData.os || ''}
+                  onChange={handleChange}
+                  disabled={loading}
+                  style={styles.input}
+                />
+              </div>
+            )}
+
+            {visibleFields.has('ram') && (
+              <div style={styles.formGroup}>
+                <label style={styles.label}>RAM</label>
+                <input
+                  name="ram"
+                  value={formData.ram || ''}
+                  onChange={handleChange}
+                  disabled={loading}
+                  style={styles.input}
+                />
+              </div>
+            )}
+
+            {visibleFields.has('disk_space') && (
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Disk Space</label>
+                <input
+                  name="disk_space"
+                  value={formData.disk_space || ''}
+                  onChange={handleChange}
+                  disabled={loading}
+                  style={styles.input}
+                />
+              </div>
+            )}
+
+            {visibleFields.has('device_age') && (
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Device Age</label>
+                <input
+                  name="device_age"
+                  value={formData.device_age || ''}
+                  onChange={handleChange}
+                  disabled={loading}
+                  style={styles.input}
+                />
+              </div>
+            )}
+
+            {visibleFields.has('serial_number') && (
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Serial Number</label>
+                <input
+                  name="serial_number"
+                  value={formData.serial_number || ''}
+                  onChange={handleChange}
+                  disabled={loading}
+                  style={styles.input}
+                />
+              </div>
+            )}
+
+            {visibleFields.has('install_date') && (
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Install Date</label>
+                <input
+                  name="install_date"
+                  type="date"
+                  value={formData.install_date || ''}
+                  onChange={handleChange}
+                  disabled={loading}
+                  style={styles.input}
+                />
+              </div>
+            )}
+
+            {visibleFields.has('location') && (
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Location</label>
+                <input
+                  name="location"
+                  value={formData.location || ''}
+                  onChange={handleChange}
+                  disabled={loading}
+                  style={styles.input}
+                />
+              </div>
+            )}
 
             <div style={styles.formGroup}>
               <label style={styles.label}>Status</label>
@@ -270,6 +397,17 @@ const styles = {
     fontFamily: 'inherit',
     transition: 'all 0.2s ease',
     backgroundColor: '#f9fafb',
+  },
+  typeHint: {
+    marginTop: '6px',
+    fontSize: '12px',
+    color: '#6b7b8d',
+    fontWeight: '600',
+  },
+  helperText: {
+    fontSize: '12px',
+    color: '#95a5a6',
+    padding: '8px 0 2px',
   },
   buttonGroup: {
     display: 'flex',
