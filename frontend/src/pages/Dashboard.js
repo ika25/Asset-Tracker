@@ -60,10 +60,24 @@ const Dashboard = () => {
     return remaining !== null && remaining >= 0 && remaining <= maxDays;
   }, [daysUntil]);
 
+  const getNormalizedStatus = useCallback((value) => {
+    const status = String(value || '').trim().toLowerCase();
+
+    if (status === 'active' || status === 'online') {
+      return 'active';
+    }
+
+    if (status === 'inactive' || status === 'offline') {
+      return 'inactive';
+    }
+
+    return 'unknown';
+  }, []);
+
   const metrics = useMemo(() => {
-    const onlineDevices = devices.filter((d) => String(d.status || '').toLowerCase() === 'online').length;
-    const offlineDevices = devices.filter((d) => String(d.status || '').toLowerCase() === 'offline').length;
-    const unknownDevices = devices.length - onlineDevices - offlineDevices;
+    const activeDevices = devices.filter((d) => getNormalizedStatus(d.status) === 'active').length;
+    const inactiveDevices = devices.filter((d) => getNormalizedStatus(d.status) === 'inactive').length;
+    const unknownDevices = devices.length - activeDevices - inactiveDevices;
 
     const licensesExpiringSoon = software.filter((s) => isExpiringInDays(s.license_expiry, 30)).length;
     const warrantiesExpiringSoon = [
@@ -71,12 +85,12 @@ const Dashboard = () => {
       ...hardware.filter((h) => isExpiringInDays(h.warranty_expiry, 60)),
     ].length;
 
-    const offlineList = devices
-      .filter((d) => String(d.status || '').toLowerCase() === 'offline')
+    const inactiveList = devices
+      .filter((d) => getNormalizedStatus(d.status) === 'inactive')
       .slice(0, 6)
       .map((d) => ({
         id: `device-${d.id}`,
-        type: 'Offline Device',
+        type: 'Inactive Device',
         name: d.name || `Device #${d.id}`,
         detail: d.ip_address || 'No IP',
       }));
@@ -121,22 +135,22 @@ const Dashboard = () => {
 
     return {
       totalDevices: devices.length,
-      onlineDevices,
-      offlineDevices,
+      activeDevices,
+      inactiveDevices,
       unknownDevices,
       hardwareCount: hardware.length,
       softwareCount: software.length,
       licensesExpiringSoon,
       warrantiesExpiringSoon,
-      attentionItems: [...offlineList, ...expiringLicenses, ...expiringWarranties].slice(0, 10),
+      attentionItems: [...inactiveList, ...expiringLicenses, ...expiringWarranties].slice(0, 10),
       latestRecords,
     };
-  }, [daysUntil, devices, hardware, isExpiringInDays, software]);
+  }, [daysUntil, devices, getNormalizedStatus, hardware, isExpiringInDays, software]);
 
-  const totalForChart = Math.max(1, metrics.onlineDevices + metrics.offlineDevices + metrics.unknownDevices);
-  const onlinePct = (metrics.onlineDevices / totalForChart) * 100;
-  const offlinePct = (metrics.offlineDevices / totalForChart) * 100;
-  const unknownPct = 100 - onlinePct - offlinePct;
+  const totalForChart = Math.max(1, metrics.activeDevices + metrics.inactiveDevices + metrics.unknownDevices);
+  const activePct = (metrics.activeDevices / totalForChart) * 100;
+  const inactivePct = (metrics.inactiveDevices / totalForChart) * 100;
+  const unknownPct = 100 - activePct - inactivePct;
 
   if (loading) {
     return <div style={styles.page}><div style={styles.loading}>Loading dashboard...</div></div>;
@@ -162,8 +176,8 @@ const Dashboard = () => {
 
       <div style={styles.kpiGrid}>
         <div style={styles.kpiCard}><div style={styles.kpiLabel}>Total Devices</div><div style={styles.kpiValue}>{metrics.totalDevices}</div></div>
-        <div style={styles.kpiCard}><div style={styles.kpiLabel}>Online Devices</div><div style={{ ...styles.kpiValue, color: '#1f8f61' }}>{metrics.onlineDevices}</div></div>
-        <div style={styles.kpiCard}><div style={styles.kpiLabel}>Offline Devices</div><div style={{ ...styles.kpiValue, color: '#d64545' }}>{metrics.offlineDevices}</div></div>
+        <div style={styles.kpiCard}><div style={styles.kpiLabel}>Active Devices</div><div style={{ ...styles.kpiValue, color: '#1f8f61' }}>{metrics.activeDevices}</div></div>
+        <div style={styles.kpiCard}><div style={styles.kpiLabel}>Inactive Devices</div><div style={{ ...styles.kpiValue, color: '#d64545' }}>{metrics.inactiveDevices}</div></div>
         <div style={styles.kpiCard}><div style={styles.kpiLabel}>Hardware Assets</div><div style={styles.kpiValue}>{metrics.hardwareCount}</div></div>
         <div style={styles.kpiCard}><div style={styles.kpiLabel}>Software Assets</div><div style={styles.kpiValue}>{metrics.softwareCount}</div></div>
         <div style={styles.kpiCard}><div style={styles.kpiLabel}>Licenses Expiring (30d)</div><div style={styles.kpiValue}>{metrics.licensesExpiringSoon}</div></div>
@@ -177,23 +191,23 @@ const Dashboard = () => {
             <div
               style={{
                 ...styles.donut,
-                background: `conic-gradient(#2ecc71 0% ${onlinePct}%, #e74c3c ${onlinePct}% ${onlinePct + offlinePct}%, #95a5a6 ${onlinePct + offlinePct}% 100%)`,
+                background: `conic-gradient(#2ecc71 0% ${activePct}%, #e74c3c ${activePct}% ${activePct + inactivePct}%, #95a5a6 ${activePct + inactivePct}% 100%)`,
               }}
             >
               <div style={styles.donutInner}>{metrics.totalDevices}</div>
             </div>
             <div style={styles.legend}>
-              <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#2ecc71' }} /> Online: {metrics.onlineDevices}</div>
-              <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#e74c3c' }} /> Offline: {metrics.offlineDevices}</div>
+              <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#2ecc71' }} /> Active: {metrics.activeDevices}</div>
+              <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#e74c3c' }} /> Inactive: {metrics.inactiveDevices}</div>
               <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#95a5a6' }} /> Unknown: {metrics.unknownDevices}</div>
-              <div style={styles.legendHint}>Unknown includes devices without online/offline status.</div>
+              <div style={styles.legendHint}>Unknown includes devices without active/inactive status.</div>
             </div>
           </div>
           <div style={styles.progressBars}>
-            <div style={styles.progressLabel}>Online {Math.round(onlinePct)}%</div>
-            <div style={styles.progressTrack}><div style={{ ...styles.progressFill, width: `${onlinePct}%`, backgroundColor: '#2ecc71' }} /></div>
-            <div style={styles.progressLabel}>Offline {Math.round(offlinePct)}%</div>
-            <div style={styles.progressTrack}><div style={{ ...styles.progressFill, width: `${offlinePct}%`, backgroundColor: '#e74c3c' }} /></div>
+            <div style={styles.progressLabel}>Active {Math.round(activePct)}%</div>
+            <div style={styles.progressTrack}><div style={{ ...styles.progressFill, width: `${activePct}%`, backgroundColor: '#2ecc71' }} /></div>
+            <div style={styles.progressLabel}>Inactive {Math.round(inactivePct)}%</div>
+            <div style={styles.progressTrack}><div style={{ ...styles.progressFill, width: `${inactivePct}%`, backgroundColor: '#e74c3c' }} /></div>
             <div style={styles.progressLabel}>Unknown {Math.round(unknownPct)}%</div>
             <div style={styles.progressTrack}><div style={{ ...styles.progressFill, width: `${unknownPct}%`, backgroundColor: '#95a5a6' }} /></div>
           </div>
