@@ -13,80 +13,66 @@ import {
   getVisibleDeviceFields,
   sanitizeDevicePayload,
 } from '../utils/deviceFormConfig';
+import { useCrudResource } from '../hooks/useCrudResource';
 
 const ICON_OPTIONS = ['💻', '🖥️', '🖨️', '🛜', '📡', '🗄️', '📱', '📷'];
 const DEVICE_TYPE_OPTIONS = ['PC', 'Laptop', 'Printer', 'Router', 'Switch', 'Server', 'Phone', 'Camera', 'Tablet', 'Other'];
+const EMPTY_DEVICE = {
+  name: '',
+  user_name: '',
+  ip_address: '',
+  type: '',
+  icon: '💻',
+  includeOnMap: false,
+  os: '',
+  ram: '',
+  disk_space: '',
+  device_age: '',
+  serial_number: '',
+  install_date: '',
+  location: '',
+  status: 'Active',
+};
 
 const DevicesPage = () => {
   // Get URL query parameters
   const [searchParams] = useSearchParams();
   const viewParam = searchParams.get('view');
 
-  // State to store devices
-  const [devices, setDevices] = useState([]);
   const [activeView, setActiveView] = useState(viewParam === 'add' ? 'add' : 'list');
   const [editingId, setEditingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [typeFilter, setTypeFilter] = useState('All');
+  const {
+    items: devices,
+    loading,
+    saving,
+    error,
+    createItem,
+    updateItem,
+    deleteItem,
+  } = useCrudResource({
+    listFn: getDevices,
+    createFn: createDevice,
+    updateFn: updateDevice,
+    deleteFn: deleteDevice,
+    loadErrorMessage: 'Failed to fetch devices.',
+    createErrorMessage: 'Failed to add device.',
+    updateErrorMessage: 'Failed to update device.',
+    deleteErrorMessage: 'Failed to delete device.',
+  });
 
   // State for new device form
-  const [newDevice, setNewDevice] = useState({
-    name: '',
-    user_name: '',
-    ip_address: '',
-    type: '',
-    icon: '💻',
-    includeOnMap: false,
-    os: '',
-    ram: '',
-    disk_space: '',
-    device_age: '',
-    serial_number: '',
-    install_date: '',
-    location: '',
-    status: 'Active',
-  });
+  const [newDevice, setNewDevice] = useState(EMPTY_DEVICE);
 
   // State for editing
-  const [editingData, setEditingData] = useState({
-    name: '',
-    user_name: '',
-    ip_address: '',
-    type: '',
-    icon: '💻',
-    includeOnMap: false,
-    os: '',
-    ram: '',
-    disk_space: '',
-    device_age: '',
-    serial_number: '',
-    install_date: '',
-    location: '',
-    status: 'Active',
-  });
+  const [editingData, setEditingData] = useState(EMPTY_DEVICE);
 
   // Update active view when URL changes
   useEffect(() => {
     setActiveView(viewParam === 'add' ? 'add' : 'list');
   }, [viewParam]);
-
-  // =========================
-  // Fetch devices from backend
-  // =========================
-  const fetchDevices = async () => {
-    try {
-      const res = await getDevices(); // API call
-      setDevices(res.data); // store in state
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  // Run once when component loads
-  useEffect(() => {
-    fetchDevices();
-  }, []);
 
   const normalizeDateValue = (value) => (value ? String(value).split('T')[0] : '');
   const formatDate = (value) => normalizeDateValue(value) || '-';
@@ -108,20 +94,16 @@ const DevicesPage = () => {
   // Add new device
   // =========================
   const handleAddDevice = async () => {
-    try {
-      const payload = sanitizeDevicePayload({
-        ...newDevice,
-        x_position: newDevice.includeOnMap ? 100 : null,
-        y_position: newDevice.includeOnMap ? 100 : null,
-      });
-      delete payload.includeOnMap;
+    const payload = sanitizeDevicePayload({
+      ...newDevice,
+      x_position: newDevice.includeOnMap ? 100 : null,
+      y_position: newDevice.includeOnMap ? 100 : null,
+    });
+    delete payload.includeOnMap;
 
-      await createDevice(payload); // send device data to backend
-      setNewDevice({ name: '', user_name: '', ip_address: '', type: '', icon: '💻', includeOnMap: false, os: '', ram: '', disk_space: '', device_age: '', serial_number: '', install_date: '', location: '', status: 'Active' }); // clear form
-      // Don't change view - let the sidebar handle navigation
-      fetchDevices(); // refresh list
-    } catch (err) {
-      console.error(err);
+    const created = await createItem(payload);
+    if (created) {
+      setNewDevice(EMPTY_DEVICE);
     }
   };
 
@@ -129,12 +111,7 @@ const DevicesPage = () => {
   // Delete device
   // =========================
   const handleDelete = async (id) => {
-    try {
-      await deleteDevice(id); // delete API
-      fetchDevices(); // refresh list
-    } catch (err) {
-      console.error(err);
-    }
+    await deleteItem(id);
   };
 
   // =========================
@@ -164,19 +141,16 @@ const DevicesPage = () => {
   // Save edited device
   // =========================
   const handleSaveEdit = async () => {
-    try {
-      const payload = sanitizeDevicePayload({
-        ...editingData,
-        x_position: editingData.includeOnMap ? (editingData.x_position ?? 100) : null,
-        y_position: editingData.includeOnMap ? (editingData.y_position ?? 100) : null,
-      });
-      delete payload.includeOnMap;
+    const payload = sanitizeDevicePayload({
+      ...editingData,
+      x_position: editingData.includeOnMap ? (editingData.x_position ?? 100) : null,
+      y_position: editingData.includeOnMap ? (editingData.y_position ?? 100) : null,
+    });
+    delete payload.includeOnMap;
 
-      await updateDevice(editingId, payload); // update API
+    const updated = await updateItem(editingId, payload);
+    if (updated) {
       setEditingId(null);
-      fetchDevices(); // refresh list
-    } catch (err) {
-      console.error(err);
     }
   };
 
@@ -215,6 +189,7 @@ const DevicesPage = () => {
         {activeView === 'add' && (
           <div style={styles.section}>
             <h2>Add New Machine</h2>
+            {error && <div style={styles.errorBanner}>{error}</div>}
             <div style={styles.formContainer}>
               <input
                 name="name"
@@ -348,7 +323,7 @@ const DevicesPage = () => {
                 />
                 Add this device to the floor map now
               </label>
-              <button onClick={handleAddDevice} style={styles.submitButton}>
+              <button onClick={handleAddDevice} style={styles.submitButton} disabled={saving || loading}>
                 Add Device
               </button>
             </div>
@@ -359,6 +334,7 @@ const DevicesPage = () => {
         {activeView === 'list' && (
           <div style={styles.section}>
             <h2>All Machines</h2>
+            {error && <div style={styles.errorBanner}>{error}</div>}
             <div style={styles.filterBar}>
               <input
                 placeholder="Search name, IP, OS, location"
@@ -533,7 +509,7 @@ const DevicesPage = () => {
                         Show this device on the floor map
                       </label>
                       <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
-                        <button onClick={handleSaveEdit} style={styles.submitButton}>
+                        <button onClick={handleSaveEdit} style={styles.submitButton} disabled={saving || loading}>
                           Save Changes
                         </button>
                         <button onClick={handleCancelEdit} style={styles.cancelButton}>
@@ -644,6 +620,15 @@ const styles = {
     padding: '20px',
     borderRadius: '8px',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+  },
+  errorBanner: {
+    marginTop: '12px',
+    marginBottom: '4px',
+    padding: '12px 14px',
+    borderRadius: '8px',
+    backgroundColor: '#fdecea',
+    color: '#b23b3b',
+    fontWeight: '600',
   },
   formContainer: {
     display: 'flex',

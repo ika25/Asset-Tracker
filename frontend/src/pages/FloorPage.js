@@ -6,6 +6,8 @@ import { Stage, Layer, Group, Image, Text, Line, Circle } from 'react-konva';
 
 // API functions
 import { getDevices, updateDevice } from '../api/deviceApi';
+import { getApiErrorMessage } from '../api/client';
+import { useCrudResource } from '../hooks/useCrudResource';
 
 // Panels
 import DevicePanel from '../components/DevicePanel';
@@ -17,7 +19,6 @@ const FloorPage = () => {
   // =========================
   // STATE
   // =========================
-  const [devices, setDevices] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [floorImage, setFloorImage] = useState(null);
   const [zoom, setZoom] = useState(1);
@@ -44,6 +45,23 @@ const FloorPage = () => {
   const stageRef = useRef(null);
   const mapViewportRef = useRef(null);
   const hasAutoFittedRef = useRef(false);
+  const {
+    items: devices,
+    setItems: setDevices,
+    loading,
+    error,
+    setError,
+    refresh,
+  } = useCrudResource({
+    listFn: getDevices,
+    createFn: async () => ({ data: null }),
+    updateFn: updateDevice,
+    deleteFn: async () => ({ data: null }),
+    loadErrorMessage: 'Failed to fetch devices for the floor map.',
+    createErrorMessage: 'Unable to create devices from the floor map.',
+    updateErrorMessage: 'Failed to update device position.',
+    deleteErrorMessage: 'Unable to delete devices from the floor map.',
+  });
 
   const GRID_SIZE = 20; // pixels
   const SNAP_SIZE = 1; // near pixel-level placement accuracy
@@ -181,22 +199,6 @@ const FloorPage = () => {
   }, [floorImage, fitToView]);
 
   // =========================
-  // FETCH DEVICES
-  // =========================
-  const fetchDevices = async () => {
-    try {
-      const res = await getDevices();
-      setDevices(res.data);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  useEffect(() => {
-    fetchDevices();
-  }, []);
-
-  // =========================
   // HANDLE DRAG
   // =========================
   const handleDragEnd = async (e, device) => {
@@ -219,6 +221,7 @@ const FloorPage = () => {
     });
 
     try {
+      setError('');
       await updateDevice(device.id, {
         x_position: x,
         y_position: y,
@@ -231,7 +234,7 @@ const FloorPage = () => {
         )
       );
     } catch (err) {
-      console.error(err);
+      setError(getApiErrorMessage(err, 'Failed to update device position.'));
     }
   };
 
@@ -430,6 +433,7 @@ const FloorPage = () => {
 
       {/* TOOLBAR */}
       <div style={styles.toolbar}>
+        {error && <div style={styles.errorBanner}>{error}</div>}
         <div style={styles.toolbarGroup}>
           {/* Grid Toggle */}
           <button
@@ -509,6 +513,7 @@ const FloorPage = () => {
       {/* MAP AREA */}
       <div style={styles.mapAreaWrapper}>
         <div style={styles.mapContainer}>
+          {loading && <div style={styles.mapStatus}>Loading floor devices...</div>}
           <div ref={mapViewportRef} style={styles.stageViewport}>
           <Stage
             ref={stageRef}
@@ -650,7 +655,7 @@ const FloorPage = () => {
         <DevicePanel
           device={selectedDevice}
           onClose={() => setSelectedDevice(null)}
-          refreshDevices={fetchDevices}
+          refreshDevices={refresh}
         />
       )}
 
@@ -702,6 +707,14 @@ const styles = {
     alignItems: 'center',
     flexWrap: 'wrap',
     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+  },
+  errorBanner: {
+    width: '100%',
+    padding: '12px 14px',
+    borderRadius: '8px',
+    backgroundColor: '#fdecea',
+    color: '#b23b3b',
+    fontWeight: '600',
   },
   toolbarGroup: {
     display: 'flex',
@@ -783,6 +796,14 @@ const styles = {
     position: 'relative',
     overflow: 'hidden',
     backgroundColor: '#f9f9f9',
+  },
+  mapStatus: {
+    marginBottom: '12px',
+    padding: '10px 14px',
+    borderRadius: '8px',
+    backgroundColor: '#ecf4ff',
+    color: '#2c5282',
+    fontWeight: '600',
   },
   stageViewport: {
     width: '100%',

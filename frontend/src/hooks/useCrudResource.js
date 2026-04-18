@@ -80,9 +80,11 @@ export const useCrudResource = ({
 
   return {
     items,
+    setItems,
     loading,
     saving,
     error,
+    setError,
     refresh,
     createItem,
     updateItem,
