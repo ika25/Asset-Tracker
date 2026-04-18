@@ -5,12 +5,14 @@ import {
   updateDevice,
   deleteDevice
 } from '../controllers/deviceController.js';
+import { validateBody, validateParams } from '../middleware/validate.js';
+import { deviceCreateSchema, deviceUpdateSchema, idParamSchema } from '../validation/schemas.js';
 
 const router = express.Router();
 
 router.get('/', getDevices);
-router.post('/', createDevice);
-router.put('/:id', updateDevice);
-router.delete('/:id', deleteDevice);
+router.post('/', validateBody(deviceCreateSchema), createDevice);
+router.put('/:id', validateParams(idParamSchema), validateBody(deviceUpdateSchema), updateDevice);
+router.delete('/:id', validateParams(idParamSchema), deleteDevice);
 
 export default router;

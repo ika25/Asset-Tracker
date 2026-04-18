@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import axios from 'axios';
+import { getDevices } from '../api/deviceApi';
+import { getHardware } from '../api/hardwareApi';
+import { getSoftware } from '../api/softwareApi';
 
 const Dashboard = () => {
   const [devices, setDevices] = useState([]);
@@ -16,9 +18,9 @@ const Dashboard = () => {
         setError('');
 
         const [devicesRes, hardwareRes, softwareRes] = await Promise.all([
-          axios.get('http://localhost:5000/api/devices'),
-          axios.get('http://localhost:5000/api/hardware'),
-          axios.get('http://localhost:5000/api/software'),
+          getDevices(),
+          getHardware(),
+          getSoftware(),
         ]);
 
         setDevices(devicesRes.data || []);

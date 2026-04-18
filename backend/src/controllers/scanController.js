@@ -1,10 +1,10 @@
 import { scanNetwork } from '../services/nmapService.js';
 
-export const runScan = async (req, res) => {
+export const runScan = async (req, res, next) => {
   try {
     const result = await scanNetwork();
     res.json({ output: result });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 };

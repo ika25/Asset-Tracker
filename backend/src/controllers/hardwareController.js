@@ -6,6 +6,7 @@ import {
   diffFields,
   insertAuditLog,
 } from '../utils/audit.js';
+import { HttpError } from '../errors/httpError.js';
 
 const normalize = (v) => (v === '' || v === undefined ? null : v);
 
@@ -17,20 +18,19 @@ const getHardwareById = async (client, id) => {
 // =========================
 // GET all hardware
 // =========================
-export const getHardware = async (req, res) => {
+export const getHardware = async (req, res, next) => {
   try {
     const result = await pool.query(`SELECT * FROM hardware ORDER BY id DESC`);
     res.json(result.rows);
   } catch (err) {
-    console.error('GET hardware error:', err);
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 };
 
 // =========================
 // CREATE hardware
 // =========================
-export const createHardware = async (req, res) => {
+export const createHardware = async (req, res, next) => {
   const { name, type, manufacturer, model, purchase_date, cost, warranty_expiry, status, location } = req.body;
   const client = await pool.connect();
 
@@ -57,8 +57,7 @@ export const createHardware = async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('CREATE hardware error:', err);
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally {
     client.release();
   }
@@ -67,7 +66,7 @@ export const createHardware = async (req, res) => {
 // =========================
 // UPDATE hardware
 // =========================
-export const updateHardware = async (req, res) => {
+export const updateHardware = async (req, res, next) => {
   const { id } = req.params;
   const { name, type, manufacturer, model, purchase_date, cost, warranty_expiry, status, location } = req.body;
   const client = await pool.connect();
@@ -78,7 +77,7 @@ export const updateHardware = async (req, res) => {
     const existing = await getHardwareById(client, id);
     if (!existing) {
       await client.query('ROLLBACK');
-      res.status(404).json({ error: 'Hardware not found' });
+      next(new HttpError(404, 'Hardware not found'));
       return;
     }
 
@@ -108,8 +107,7 @@ export const updateHardware = async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('UPDATE hardware error:', err);
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally {
     client.release();
   }
@@ -118,7 +116,7 @@ export const updateHardware = async (req, res) => {
 // =========================
 // DELETE hardware
 // =========================
-export const deleteHardware = async (req, res) => {
+export const deleteHardware = async (req, res, next) => {
   const { id } = req.params;
   const client = await pool.connect();
 
@@ -142,8 +140,7 @@ export const deleteHardware = async (req, res) => {
     res.json({ message: 'Hardware deleted' });
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('DELETE hardware error:', err);
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally {
     client.release();
   }

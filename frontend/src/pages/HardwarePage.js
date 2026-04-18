@@ -1,58 +1,59 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import axios from 'axios';
+import {
+  createHardware,
+  deleteHardware,
+  getHardware,
+  updateHardware,
+} from '../api/hardwareApi';
+import { useCrudResource } from '../hooks/useCrudResource';
 
-const API = 'http://localhost:5000/api/hardware';
+const EMPTY_HARDWARE = {
+  name: '',
+  type: '',
+  model: '',
+  manufacturer: '',
+  purchase_date: '',
+  cost: '',
+  location: '',
+  warranty_expiry: '',
+  status: 'Active',
+};
 
 const HardwarePage = () => {
   // Get URL query parameters
   const [searchParams] = useSearchParams();
   const viewParam = searchParams.get('view');
 
-  // State to store hardware
-  const [hardwareList, setHardwareList] = useState([]);
   const [activeView, setActiveView] = useState(viewParam === 'add' ? 'add' : 'list');
   const [editingId, setEditingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
+  const {
+    items: hardwareList,
+    loading,
+    saving,
+    error,
+    createItem,
+    updateItem,
+    deleteItem,
+  } = useCrudResource({
+    listFn: getHardware,
+    createFn: createHardware,
+    updateFn: updateHardware,
+    deleteFn: deleteHardware,
+    loadErrorMessage: 'Failed to fetch hardware.',
+    createErrorMessage: 'Failed to add hardware.',
+    updateErrorMessage: 'Failed to update hardware.',
+    deleteErrorMessage: 'Failed to delete hardware.',
+  });
 
   // State for new hardware form
-  const [newHardware, setNewHardware] = useState({
-    name: '',
-    type: '',
-    model: '',
-    manufacturer: '',
-    purchase_date: '',
-    cost: '',
-    location: '',
-    warranty_expiry: '',
-    status: 'Active',
-  });
+  const [newHardware, setNewHardware] = useState(EMPTY_HARDWARE);
 
   // State for editing
-  const [editingData, setEditingData] = useState({
-    name: '',
-    type: '',
-    model: '',
-    manufacturer: '',
-    purchase_date: '',
-    cost: '',
-    location: '',
-    warranty_expiry: '',
-    status: 'Active',
-  });
-
-  const fetchHardware = async () => {
-    try {
-      const res = await axios.get(API);
-      setHardwareList(res.data);
-    } catch (err) {
-      console.error('Failed to fetch hardware:', err);
-    }
-  };
-
-  useEffect(() => { fetchHardware(); }, []);
+  const [editingData, setEditingData] = useState(EMPTY_HARDWARE);
 
   const normalizeDateValue = (value) => (value ? String(value).split('T')[0] : '');
   const formatDate = (value) => normalizeDateValue(value) || '-';
@@ -77,22 +78,9 @@ const HardwarePage = () => {
   // =========================
   const handleAddHardware = async () => {
     if (newHardware.name && newHardware.type) {
-      try {
-        await axios.post(API, newHardware);
-        await fetchHardware();
-        setNewHardware({
-          name: '',
-          type: '',
-          model: '',
-          manufacturer: '',
-          purchase_date: '',
-          cost: '',
-          location: '',
-          warranty_expiry: '',
-          status: 'Active',
-        });
-      } catch (err) {
-        console.error('Failed to add hardware:', err);
+      const created = await createItem(newHardware);
+      if (created) {
+        setNewHardware(EMPTY_HARDWARE);
       }
     }
   };
@@ -101,12 +89,7 @@ const HardwarePage = () => {
   // Delete hardware
   // =========================
   const handleDelete = async (id) => {
-    try {
-      await axios.delete(`${API}/${id}`);
-      await fetchHardware();
-    } catch (err) {
-      console.error('Failed to delete hardware:', err);
-    }
+    await deleteItem(id);
   };
 
   // =========================
@@ -135,12 +118,9 @@ const HardwarePage = () => {
   // Save edited hardware
   // =========================
   const handleSaveEdit = async () => {
-    try {
-      await axios.put(`${API}/${editingId}`, editingData);
-      await fetchHardware();
+    const updated = await updateItem(editingId, editingData);
+    if (updated) {
       setEditingId(null);
-    } catch (err) {
-      console.error('Failed to update hardware:', err);
     }
   };
 
@@ -179,6 +159,7 @@ const HardwarePage = () => {
         {activeView === 'add' && (
           <div style={styles.section}>
             <h2>Add New Hardware</h2>
+            {error && <div style={styles.errorBanner}>{error}</div>}
             <div style={styles.formContainer}>
               <input
                 name="name"
@@ -249,7 +230,7 @@ const HardwarePage = () => {
                 <option value="Retired">Retired</option>
                 <option value="For Sale">For Sale</option>
               </select>
-              <button onClick={handleAddHardware} style={styles.submitButton}>
+              <button onClick={handleAddHardware} style={styles.submitButton} disabled={saving || loading}>
                 Add Hardware
               </button>
             </div>
@@ -260,6 +241,7 @@ const HardwarePage = () => {
         {activeView === 'list' && (
           <div style={styles.section}>
             <h2>Hardware Inventory</h2>
+            {error && <div style={styles.errorBanner}>{error}</div>}
             <div style={styles.filterBar}>
               <input
                 placeholder="Search name, model, manufacturer, location"
@@ -525,6 +507,15 @@ const styles = {
     padding: '20px',
     borderRadius: '8px',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+  },
+  errorBanner: {
+    marginTop: '12px',
+    marginBottom: '4px',
+    padding: '12px 14px',
+    borderRadius: '8px',
+    backgroundColor: '#fdecea',
+    color: '#b23b3b',
+    fontWeight: '600',
   },
   formContainer: {
     display: 'flex',

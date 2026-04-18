@@ -5,6 +5,7 @@ import {
   diffFields,
   insertAuditLog,
 } from '../utils/audit.js';
+import { HttpError } from '../errors/httpError.js';
 
 const normalize = (v) => (v === '' || v === undefined ? null : v);
 
@@ -13,16 +14,16 @@ const getSoftwareById = async (client, id) => {
   return rows[0] || null;
 };
 
-export const getSoftware = async (req, res) => {
+export const getSoftware = async (req, res, next) => {
   try {
     const result = await pool.query('SELECT * FROM software ORDER BY id ASC');
     res.json(result.rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 };
 
-export const createSoftware = async (req, res) => {
+export const createSoftware = async (req, res, next) => {
   const { name, version, vendor, license_type, license_expiry, installed_on, installation_date } = req.body;
   const client = await pool.connect();
   try {
@@ -47,13 +48,13 @@ export const createSoftware = async (req, res) => {
     res.status(201).json(result.rows[0]);
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally {
     client.release();
   }
 };
 
-export const updateSoftware = async (req, res) => {
+export const updateSoftware = async (req, res, next) => {
   const { id } = req.params;
   const { name, version, vendor, license_type, license_expiry, installed_on, installation_date } = req.body;
   const client = await pool.connect();
@@ -63,7 +64,7 @@ export const updateSoftware = async (req, res) => {
     const existing = await getSoftwareById(client, id);
     if (!existing) {
       await client.query('ROLLBACK');
-      res.status(404).json({ error: 'Software not found' });
+      next(new HttpError(404, 'Software not found'));
       return;
     }
 
@@ -90,13 +91,13 @@ export const updateSoftware = async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally {
     client.release();
   }
 };
 
-export const deleteSoftware = async (req, res) => {
+export const deleteSoftware = async (req, res, next) => {
   const { id } = req.params;
   const client = await pool.connect();
   try {
@@ -119,7 +120,7 @@ export const deleteSoftware = async (req, res) => {
     res.json({ message: 'Deleted' });
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally {
     client.release();
   }

@@ -1,10 +1,11 @@
 // Import DB
 import pool from '../config/db.js';
+import { HttpError } from '../errors/httpError.js';
 
 // =========================
 // Assign software to device
 // =========================
-export const assignSoftware = async (req, res) => {
+export const assignSoftware = async (req, res, next) => {
   const { device_id, software_id } = req.body;
 
   try {
@@ -17,14 +18,14 @@ export const assignSoftware = async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 };
 
 // =========================
 // Get software for device
 // =========================
-export const getDeviceSoftware = async (req, res) => {
+export const getDeviceSoftware = async (req, res, next) => {
   const { deviceId } = req.params;
 
   try {
@@ -38,6 +39,6 @@ export const getDeviceSoftware = async (req, res) => {
 
     res.json(result.rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 };

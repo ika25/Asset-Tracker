@@ -5,6 +5,7 @@ import {
   diffFields,
   insertAuditLog,
 } from '../utils/audit.js';
+import { HttpError } from '../errors/httpError.js';
 
 const DEVICE_SELECT = `
   SELECT
@@ -44,16 +45,16 @@ const getDeviceById = async (client, id) => {
   return rows[0] || null;
 };
 
-export const getDevices = async (req, res) => {
+export const getDevices = async (req, res, next) => {
   try {
     const result = await pool.query(`${DEVICE_SELECT} ORDER BY d.id DESC`);
     res.json(result.rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 };
 
-export const createDevice = async (req, res) => {
+export const createDevice = async (req, res, next) => {
   const {
     name,
     ip_address,
@@ -149,13 +150,13 @@ export const createDevice = async (req, res) => {
     res.json(createdDevice);
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally {
     client.release();
   }
 };
 
-export const updateDevice = async (req, res) => {
+export const updateDevice = async (req, res, next) => {
   const { id } = req.params;
   const client = await pool.connect();
 
@@ -165,7 +166,7 @@ export const updateDevice = async (req, res) => {
     const existing = await getDeviceById(client, id);
     if (!existing) {
       await client.query('ROLLBACK');
-      res.status(404).json({ error: 'Device not found' });
+      next(new HttpError(404, 'Device not found'));
       return;
     }
 
@@ -268,13 +269,13 @@ export const updateDevice = async (req, res) => {
     res.json(updatedDevice);
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally {
     client.release();
   }
 };
 
-export const deleteDevice = async (req, res) => {
+export const deleteDevice = async (req, res, next) => {
   const { id } = req.params;
   const client = await pool.connect();
 
@@ -299,7 +300,7 @@ export const deleteDevice = async (req, res) => {
     res.json({ message: 'Device deleted' });
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(500).json({ error: err.message });
+    next(err);
   } finally {
     client.release();
   }

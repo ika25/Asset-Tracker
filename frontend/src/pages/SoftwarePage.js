@@ -1,55 +1,57 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import axios from 'axios';
+import {
+  createSoftware,
+  deleteSoftware,
+  getSoftware,
+  updateSoftware,
+} from '../api/softwareApi';
+import { useCrudResource } from '../hooks/useCrudResource';
 
-const API = 'http://localhost:5000/api/software';
+const EMPTY_SOFTWARE = {
+  name: '',
+  version: '',
+  vendor: '',
+  license_type: '',
+  license_expiry: '',
+  installed_on: '',
+  installation_date: '',
+};
 
 const SoftwarePage = () => {
   // Get URL query parameters
   const [searchParams] = useSearchParams();
   const viewParam = searchParams.get('view');
 
-  // State to store software
-  const [softwareList, setSoftwareList] = useState([]);
   const [activeView, setActiveView] = useState(viewParam === 'add' ? 'add' : 'list');
   const [editingId, setEditingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [vendorFilter, setVendorFilter] = useState('All');
   const [licenseFilter, setLicenseFilter] = useState('All');
+  const {
+    items: softwareList,
+    loading,
+    saving,
+    error,
+    createItem,
+    updateItem,
+    deleteItem,
+  } = useCrudResource({
+    listFn: getSoftware,
+    createFn: createSoftware,
+    updateFn: updateSoftware,
+    deleteFn: deleteSoftware,
+    loadErrorMessage: 'Failed to fetch software.',
+    createErrorMessage: 'Failed to add software.',
+    updateErrorMessage: 'Failed to update software.',
+    deleteErrorMessage: 'Failed to delete software.',
+  });
 
   // State for new software form
-  const [newSoftware, setNewSoftware] = useState({
-    name: '',
-    version: '',
-    vendor: '',
-    license_type: '',
-    license_expiry: '',
-    installed_on: '',
-    installation_date: '',
-  });
+  const [newSoftware, setNewSoftware] = useState(EMPTY_SOFTWARE);
 
   // State for editing
-  const [editingData, setEditingData] = useState({
-    name: '',
-    version: '',
-    vendor: '',
-    license_type: '',
-    license_expiry: '',
-    installed_on: '',
-    installation_date: '',
-  });
-
-  // Fetch software from backend
-  const fetchSoftware = async () => {
-    try {
-      const res = await axios.get(API);
-      setSoftwareList(res.data);
-    } catch (err) {
-      console.error('Failed to fetch software:', err);
-    }
-  };
-
-  useEffect(() => { fetchSoftware(); }, []);
+  const [editingData, setEditingData] = useState(EMPTY_SOFTWARE);
 
   const normalizeDateValue = (value) => (value ? String(value).split('T')[0] : '');
   const formatDate = (value) => normalizeDateValue(value) || '-';
@@ -74,20 +76,9 @@ const SoftwarePage = () => {
   // =========================
   const handleAddSoftware = async () => {
     if (newSoftware.name && newSoftware.vendor) {
-      try {
-        await axios.post(API, newSoftware);
-        await fetchSoftware();
-        setNewSoftware({
-          name: '',
-          version: '',
-          vendor: '',
-          license_type: '',
-          license_expiry: '',
-          installed_on: '',
-          installation_date: '',
-        });
-      } catch (err) {
-        console.error('Failed to add software:', err);
+      const created = await createItem(newSoftware);
+      if (created) {
+        setNewSoftware(EMPTY_SOFTWARE);
       }
     }
   };
@@ -96,12 +87,7 @@ const SoftwarePage = () => {
   // Delete software
   // =========================
   const handleDelete = async (id) => {
-    try {
-      await axios.delete(`${API}/${id}`);
-      await fetchSoftware();
-    } catch (err) {
-      console.error('Failed to delete software:', err);
-    }
+    await deleteItem(id);
   };
 
   // =========================
@@ -130,12 +116,9 @@ const SoftwarePage = () => {
   // Save edited software
   // =========================
   const handleSaveEdit = async () => {
-    try {
-      await axios.put(`${API}/${editingId}`, editingData);
-      await fetchSoftware();
+    const updated = await updateItem(editingId, editingData);
+    if (updated) {
       setEditingId(null);
-    } catch (err) {
-      console.error('Failed to update software:', err);
     }
   };
 
@@ -173,6 +156,7 @@ const SoftwarePage = () => {
         {activeView === 'add' && (
           <div style={styles.section}>
             <h2>Add New Software</h2>
+            {error && <div style={styles.errorBanner}>{error}</div>}
             <div style={styles.formContainer}>
               <input
                 name="name"
@@ -225,7 +209,7 @@ const SoftwarePage = () => {
                 onChange={handleChange}
                 style={styles.input}
               />
-              <button onClick={handleAddSoftware} style={styles.submitButton}>
+              <button onClick={handleAddSoftware} style={styles.submitButton} disabled={saving || loading}>
                 Add Software
               </button>
             </div>
@@ -236,6 +220,7 @@ const SoftwarePage = () => {
         {activeView === 'list' && (
           <div style={styles.section}>
             <h2>Software Inventory</h2>
+            {error && <div style={styles.errorBanner}>{error}</div>}
             <div style={styles.filterBar}>
               <input
                 placeholder="Search name, version, installed on"
@@ -423,6 +408,15 @@ const styles = {
     padding: '20px',
     borderRadius: '8px',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+  },
+  errorBanner: {
+    marginTop: '12px',
+    marginBottom: '4px',
+    padding: '12px 14px',
+    borderRadius: '8px',
+    backgroundColor: '#fdecea',
+    color: '#b23b3b',
+    fontWeight: '600',
   },
   formContainer: {
     display: 'flex',
