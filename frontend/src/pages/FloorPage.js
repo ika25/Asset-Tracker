@@ -245,6 +245,15 @@ const FloorPage = () => {
     setTooltipPos({ x: pointer.x + 14, y: pointer.y + 14 });
   };
 
+  const formatTooltipValue = (value) => {
+    return value === null || value === undefined || value === '' ? 'N/A' : value;
+  };
+
+  const formatTooltipDate = (value) => {
+    if (!value) return 'N/A';
+    return String(value).split('T')[0];
+  };
+
   // =========================
   // HANDLE CLICK (DESELECT DEVICE)
   // =========================
@@ -630,11 +639,34 @@ const FloorPage = () => {
                 top: tooltipPos.y,
               }}
             >
-              <div style={styles.tooltipTitle}>{hoveredDevice.name || 'Unnamed Device'}</div>
-              <div>IP: {hoveredDevice.ip_address || 'N/A'}</div>
-              <div>Type: {hoveredDevice.type || 'N/A'}</div>
-              <div>Status: {hoveredDevice.status || 'N/A'}</div>
-              <div>Location: {hoveredDevice.location || 'N/A'}</div>
+              <div style={styles.tooltipHeaderRow}>
+                <div style={styles.tooltipTitle}>{hoveredDevice.name || 'Unnamed Device'}</div>
+                <div style={styles.tooltipStatusBadge}>{formatTooltipValue(hoveredDevice.status)}</div>
+              </div>
+              <div style={styles.tooltipGrid}>
+                <div style={styles.tooltipLabel}>IP</div>
+                <div>{formatTooltipValue(hoveredDevice.ip_address)}</div>
+                <div style={styles.tooltipLabel}>Type</div>
+                <div>{formatTooltipValue(hoveredDevice.type)}</div>
+                <div style={styles.tooltipLabel}>User</div>
+                <div>{formatTooltipValue(hoveredDevice.user_name)}</div>
+                <div style={styles.tooltipLabel}>Location</div>
+                <div>{formatTooltipValue(hoveredDevice.location)}</div>
+                <div style={styles.tooltipLabel}>OS</div>
+                <div>{formatTooltipValue(hoveredDevice.os)}</div>
+                <div style={styles.tooltipLabel}>RAM</div>
+                <div>{formatTooltipValue(hoveredDevice.ram)}</div>
+                <div style={styles.tooltipLabel}>Disk</div>
+                <div>{formatTooltipValue(hoveredDevice.disk_space)}</div>
+                <div style={styles.tooltipLabel}>Serial</div>
+                <div>{formatTooltipValue(hoveredDevice.serial_number)}</div>
+                <div style={styles.tooltipLabel}>Installed</div>
+                <div>{formatTooltipDate(hoveredDevice.install_date)}</div>
+                <div style={styles.tooltipLabel}>Age</div>
+                <div>{formatTooltipValue(hoveredDevice.device_age)}</div>
+                <div style={styles.tooltipLabel}>Map X,Y</div>
+                <div>{`${formatTooltipValue(hoveredDevice.x_position)}, ${formatTooltipValue(hoveredDevice.y_position)}`}</div>
+              </div>
             </div>
           )}
           </div>
@@ -821,18 +853,43 @@ const styles = {
     pointerEvents: 'none',
     backgroundColor: 'rgba(24, 32, 43, 0.94)',
     color: '#fff',
-    padding: '10px 12px',
+    padding: '12px 14px',
     borderRadius: '8px',
     fontSize: '12px',
     lineHeight: '1.4',
     boxShadow: '0 8px 20px rgba(0,0,0,0.25)',
-    maxWidth: '240px',
+    minWidth: '250px',
+    maxWidth: '320px',
     zIndex: 10,
+  },
+  tooltipHeaderRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '10px',
+    marginBottom: '8px',
   },
   tooltipTitle: {
     fontSize: '13px',
     fontWeight: '700',
-    marginBottom: '4px',
+  },
+  tooltipStatusBadge: {
+    padding: '3px 8px',
+    borderRadius: '999px',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    fontSize: '11px',
+    fontWeight: '700',
+    whiteSpace: 'nowrap',
+  },
+  tooltipGrid: {
+    display: 'grid',
+    gridTemplateColumns: '72px 1fr',
+    gap: '4px 10px',
+    alignItems: 'start',
+  },
+  tooltipLabel: {
+    color: '#9fb3c8',
+    fontWeight: '600',
   },
   instruction: {
     marginTop: '20px',
