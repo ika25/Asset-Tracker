@@ -7,6 +7,9 @@ const FIELD_GROUPS = {
   generic: ['manufacturer', 'user_name', 'ip_address', 'serial_number', 'install_date', 'location'],
 };
 
+export const DEVICE_TYPE_OPTIONS = ['PC', 'Laptop', 'Printer', 'Router', 'Switch', 'Server', 'Phone', 'Camera', 'Tablet', 'Other'];
+export const DEVICE_STATUS_OPTIONS = ['Active', 'Inactive', 'Retired', 'In Repair', 'For Sale'];
+
 const OPTIONAL_FIELDS = ['manufacturer', 'user_name', 'ip_address', 'os', 'ram', 'disk_space', 'device_age', 'serial_number', 'install_date', 'location'];
 const DEVICE_PAYLOAD_FIELDS = [
   'name',

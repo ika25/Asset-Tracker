@@ -9,6 +9,8 @@ import {
   updateDevice,
 } from '../api/deviceApi';
 import {
+  DEVICE_STATUS_OPTIONS,
+  DEVICE_TYPE_OPTIONS,
   getCategoryLabel,
   getVisibleDeviceFields,
   sanitizeDevicePayload,
@@ -16,7 +18,6 @@ import {
 import { useCrudResource } from '../hooks/useCrudResource';
 
 const ICON_OPTIONS = ['💻', '🖥️', '🖨️', '🛜', '📡', '🗄️', '📱', '📷'];
-const DEVICE_TYPE_OPTIONS = ['PC', 'Laptop', 'Printer', 'Router', 'Switch', 'Server', 'Phone', 'Camera', 'Tablet', 'Other'];
 const EMPTY_DEVICE = {
   name: '',
   manufacturer: '',
@@ -169,6 +170,12 @@ const DevicesPage = () => {
   };
 
   const deviceTypes = [...new Set([...DEVICE_TYPE_OPTIONS, ...devices.map((d) => d.type).filter(Boolean)])];
+  const deviceStatuses = [
+    ...DEVICE_STATUS_OPTIONS,
+    ...devices
+      .map((device) => device.status)
+      .filter((status) => status && !DEVICE_STATUS_OPTIONS.includes(status)),
+  ];
 
   const filteredDevices = devices.filter((device) => {
     const query = searchTerm.toLowerCase();
@@ -319,11 +326,9 @@ const DevicesPage = () => {
                 onChange={handleChange}
                 style={styles.input}
               >
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-                <option value="Retired">Retired</option>
-                <option value="In Repair">In Repair</option>
-                <option value="For Sale">For Sale</option>
+                {DEVICE_STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
               </select>
               <label style={styles.checkboxLabel}>
                 <input
@@ -348,7 +353,7 @@ const DevicesPage = () => {
             {error && <div style={styles.errorBanner}>{error}</div>}
             <div style={styles.filterBar}>
               <input
-                placeholder="Search name, IP, OS, location"
+                placeholder="Search name, maker, IP, OS, location"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 style={styles.filterInput}
@@ -369,11 +374,9 @@ const DevicesPage = () => {
                 style={styles.filterInput}
               >
                 <option value="All">All Statuses</option>
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-                <option value="Retired">Retired</option>
-                <option value="In Repair">In Repair</option>
-                <option value="For Sale">For Sale</option>
+                {deviceStatuses.map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
               </select>
               <button onClick={handleClearFilters} style={styles.clearFilterButton}>
                 Clear Filters
@@ -513,11 +516,9 @@ const DevicesPage = () => {
                         onChange={handleEditChange}
                         style={styles.input}
                       >
-                        <option value="Active">Active</option>
-                        <option value="Inactive">Inactive</option>
-                        <option value="Retired">Retired</option>
-                        <option value="In Repair">In Repair</option>
-                        <option value="For Sale">For Sale</option>
+                        {DEVICE_STATUS_OPTIONS.map((status) => (
+                          <option key={status} value={status}>{status}</option>
+                        ))}
                       </select>
                       <label style={styles.checkboxLabel}>
                         <input

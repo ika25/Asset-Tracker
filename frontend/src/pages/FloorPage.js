@@ -8,6 +8,7 @@ import { Stage, Layer, Group, Image, Text, Line, Circle } from 'react-konva';
 import { getDevices, updateDevice } from '../api/deviceApi';
 import { getApiErrorMessage } from '../api/client';
 import { useCrudResource } from '../hooks/useCrudResource';
+import { DEVICE_STATUS_OPTIONS, DEVICE_TYPE_OPTIONS } from '../utils/deviceFormConfig';
 
 // Panels
 import DevicePanel from '../components/DevicePanel';
@@ -392,13 +393,17 @@ const FloorPage = () => {
   // =========================
   const filteredDevices = devices.filter((device) => {
     // Search filter
+    const query = searchFilter.toLowerCase();
     const searchMatch =
-      device.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
-      device.ip_address?.toLowerCase().includes(searchFilter.toLowerCase()) ||
-      device.type?.toLowerCase().includes(searchFilter.toLowerCase());
+      (device.name || '').toLowerCase().includes(query) ||
+      (device.manufacturer || '').toLowerCase().includes(query) ||
+      (device.ip_address || '').toLowerCase().includes(query) ||
+      (device.type || '').toLowerCase().includes(query) ||
+      (device.user_name || '').toLowerCase().includes(query) ||
+      (device.location || '').toLowerCase().includes(query);
 
     // Type filter
-    const typeMatch = !typeFilter || device.type?.toLowerCase().includes(typeFilter.toLowerCase());
+    const typeMatch = !typeFilter || (device.type || '').toLowerCase() === typeFilter.toLowerCase();
 
     // Status filter
     const statusMatch = !statusFilter || device.status === statusFilter;
@@ -407,7 +412,13 @@ const FloorPage = () => {
   });
 
   // Get unique device types
-  const deviceTypes = [...new Set(devices.map((d) => d.type).filter(Boolean))].sort();
+  const deviceTypes = [...new Set([...DEVICE_TYPE_OPTIONS, ...devices.map((d) => d.type).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
+  const deviceStatuses = [
+    ...DEVICE_STATUS_OPTIONS,
+    ...devices
+      .map((device) => device.status)
+      .filter((status) => status && !DEVICE_STATUS_OPTIONS.includes(status)),
+  ];
 
   // =========================
   // CALCULATE STATS
@@ -487,18 +498,16 @@ const FloorPage = () => {
             title="Filter by status"
           >
             <option value="">All Status</option>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-            <option value="Retired">Retired</option>
-            <option value="In Repair">In Repair</option>
-            <option value="For Sale">For Sale</option>
+            {deviceStatuses.map((status) => (
+              <option key={status} value={status}>{status}</option>
+            ))}
           </select>
         </div>
 
         <div style={styles.searchContainer}>
           <input
             type="text"
-            placeholder="Search devices by name, IP, or type..."
+            placeholder="Search devices by name, maker, IP, type, user, or location..."
             value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)}
             style={styles.searchInput}

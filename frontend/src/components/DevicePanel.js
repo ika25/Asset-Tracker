@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { updateDevice, deleteDevice } from '../api/deviceApi';
 import {
+  DEVICE_STATUS_OPTIONS,
   getCategoryLabel,
   getVisibleDeviceFields,
   sanitizeDevicePayload,
@@ -271,11 +272,9 @@ const DevicePanel = ({ device, onClose, refreshDevices }) => {
                 disabled={loading}
                 style={styles.input}
               >
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-                <option value="Retired">Retired</option>
-                <option value="In Repair">In Repair</option>
-                <option value="For Sale">For Sale</option>
+                {DEVICE_STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
               </select>
             </div>
 
