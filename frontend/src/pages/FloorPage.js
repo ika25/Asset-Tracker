@@ -5,13 +5,38 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Stage, Layer, Group, Image, Text, Line, Circle } from 'react-konva';
 
 // API functions
-import { getDevices, updateDevice } from '../api/deviceApi';
+import { createDevice, getDevices, updateDevice } from '../api/deviceApi';
 import { getApiErrorMessage } from '../api/client';
 import { useCrudResource } from '../hooks/useCrudResource';
-import { DEVICE_STATUS_OPTIONS, DEVICE_TYPE_OPTIONS } from '../utils/deviceFormConfig';
+import {
+  DEVICE_STATUS_OPTIONS,
+  DEVICE_TYPE_OPTIONS,
+  getCategoryLabel,
+  getVisibleDeviceFields,
+  sanitizeDevicePayload,
+} from '../utils/deviceFormConfig';
 
 // Panels
 import DevicePanel from '../components/DevicePanel';
+
+const ICON_OPTIONS = ['💻', '🖥️', '🖨️', '🛜', '📡', '🗄️', '📱', '📷'];
+const EMPTY_DEVICE = {
+  name: '',
+  manufacturer: '',
+  user_name: '',
+  ip_address: '',
+  type: '',
+  icon: '💻',
+  includeOnMap: true,
+  os: '',
+  ram: '',
+  disk_space: '',
+  device_age: '',
+  serial_number: '',
+  install_date: '',
+  location: '',
+  status: 'Active',
+};
 
 const FloorPage = () => {
   const BASE_MAP_WIDTH = 1200;
@@ -31,6 +56,8 @@ const FloorPage = () => {
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [showGrid, setShowGrid] = useState(true);
+  const [showAddDeviceModal, setShowAddDeviceModal] = useState(false);
+  const [newDevice, setNewDevice] = useState(EMPTY_DEVICE);
   const [hoveredDevice, setHoveredDevice] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [mapSize, setMapSize] = useState({
@@ -50,12 +77,14 @@ const FloorPage = () => {
     items: devices,
     setItems: setDevices,
     loading,
+    saving,
     error,
     setError,
     refresh,
+    createItem,
   } = useCrudResource({
     listFn: getDevices,
-    createFn: async () => ({ data: null }),
+    createFn: createDevice,
     updateFn: updateDevice,
     deleteFn: async () => ({ data: null }),
     loadErrorMessage: 'Failed to fetch devices for the floor map.',
@@ -71,6 +100,7 @@ const FloorPage = () => {
 
   const mapScaleX = mapSize.width / BASE_MAP_WIDTH;
   const mapScaleY = mapSize.height / BASE_MAP_HEIGHT;
+  const newDeviceFields = getVisibleDeviceFields(newDevice);
 
   const detectContentBounds = (img) => {
     try {
@@ -253,6 +283,40 @@ const FloorPage = () => {
   const formatTooltipDate = (value) => {
     if (!value) return 'N/A';
     return String(value).split('T')[0];
+  };
+
+  const handleNewDeviceChange = (e) => {
+    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+    setNewDevice((prev) => ({
+      ...prev,
+      [e.target.name]: value,
+    }));
+  };
+
+  const handleOpenAddDevice = () => {
+    setError('');
+    setNewDevice(EMPTY_DEVICE);
+    setShowAddDeviceModal(true);
+  };
+
+  const handleCloseAddDevice = () => {
+    setShowAddDeviceModal(false);
+    setNewDevice(EMPTY_DEVICE);
+  };
+
+  const handleAddDevice = async () => {
+    const payload = sanitizeDevicePayload({
+      ...newDevice,
+      x_position: newDevice.includeOnMap ? 100 : null,
+      y_position: newDevice.includeOnMap ? 100 : null,
+    });
+
+    delete payload.includeOnMap;
+
+    const created = await createItem(payload);
+    if (created) {
+      handleCloseAddDevice();
+    }
   };
 
   // =========================
@@ -455,6 +519,14 @@ const FloorPage = () => {
       <div style={styles.toolbar}>
         {error && <div style={styles.errorBanner}>{error}</div>}
         <div style={styles.toolbarGroup}>
+          <button
+            onClick={handleOpenAddDevice}
+            style={styles.toolButton}
+            title="Add a device from the floor page"
+          >
+            Add Device
+          </button>
+
           {/* Grid Toggle */}
           <button
             onClick={() => setShowGrid(!showGrid)}
@@ -694,6 +766,177 @@ const FloorPage = () => {
       </div>
 
       {/* MODALS */}
+      {showAddDeviceModal && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.addDeviceModal}>
+            <div style={styles.modalHeader}>
+              <div>
+                <h3 style={styles.modalTitle}>Add Device</h3>
+                <div style={styles.modalSubtitle}>Create a device without leaving the floor map.</div>
+              </div>
+              <button onClick={handleCloseAddDevice} style={styles.modalCloseButton} disabled={saving}>
+                ✕
+              </button>
+            </div>
+
+            {error && <div style={styles.modalError}>{error}</div>}
+
+            <div style={styles.addDeviceForm}>
+              <input
+                name="name"
+                placeholder="Device Name"
+                value={newDevice.name}
+                onChange={handleNewDeviceChange}
+                style={styles.modalInput}
+              />
+              <select
+                name="type"
+                value={newDevice.type}
+                onChange={handleNewDeviceChange}
+                style={styles.modalInput}
+              >
+                <option value="">Select device type</option>
+                {DEVICE_TYPE_OPTIONS.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+              <select
+                name="icon"
+                value={newDevice.icon}
+                onChange={handleNewDeviceChange}
+                style={styles.modalInput}
+              >
+                {ICON_OPTIONS.map((icon) => (
+                  <option key={icon} value={icon}>{icon}</option>
+                ))}
+              </select>
+
+              <div style={styles.modalSectionLabel}>{getCategoryLabel(newDevice)}</div>
+
+              {newDeviceFields.has('manufacturer') && (
+                <input
+                  name="manufacturer"
+                  placeholder="Device Maker / Brand"
+                  value={newDevice.manufacturer}
+                  onChange={handleNewDeviceChange}
+                  style={styles.modalInput}
+                />
+              )}
+              {newDeviceFields.has('user_name') && (
+                <input
+                  name="user_name"
+                  placeholder="User Name"
+                  value={newDevice.user_name}
+                  onChange={handleNewDeviceChange}
+                  style={styles.modalInput}
+                />
+              )}
+              {newDeviceFields.has('ip_address') && (
+                <input
+                  name="ip_address"
+                  placeholder="IP Address"
+                  value={newDevice.ip_address}
+                  onChange={handleNewDeviceChange}
+                  style={styles.modalInput}
+                />
+              )}
+              {newDeviceFields.has('os') && (
+                <input
+                  name="os"
+                  placeholder="Operating System"
+                  value={newDevice.os}
+                  onChange={handleNewDeviceChange}
+                  style={styles.modalInput}
+                />
+              )}
+              {newDeviceFields.has('ram') && (
+                <input
+                  name="ram"
+                  placeholder="RAM"
+                  value={newDevice.ram}
+                  onChange={handleNewDeviceChange}
+                  style={styles.modalInput}
+                />
+              )}
+              {newDeviceFields.has('disk_space') && (
+                <input
+                  name="disk_space"
+                  placeholder="Disk Space"
+                  value={newDevice.disk_space}
+                  onChange={handleNewDeviceChange}
+                  style={styles.modalInput}
+                />
+              )}
+              {newDeviceFields.has('device_age') && (
+                <input
+                  name="device_age"
+                  placeholder="Device Age"
+                  value={newDevice.device_age}
+                  onChange={handleNewDeviceChange}
+                  style={styles.modalInput}
+                />
+              )}
+              {newDeviceFields.has('serial_number') && (
+                <input
+                  name="serial_number"
+                  placeholder="Serial Number"
+                  value={newDevice.serial_number}
+                  onChange={handleNewDeviceChange}
+                  style={styles.modalInput}
+                />
+              )}
+              {newDeviceFields.has('install_date') && (
+                <input
+                  name="install_date"
+                  type="date"
+                  value={newDevice.install_date}
+                  onChange={handleNewDeviceChange}
+                  style={styles.modalInput}
+                />
+              )}
+              {newDeviceFields.has('location') && (
+                <input
+                  name="location"
+                  placeholder="Location / Department"
+                  value={newDevice.location}
+                  onChange={handleNewDeviceChange}
+                  style={styles.modalInput}
+                />
+              )}
+              <select
+                name="status"
+                value={newDevice.status}
+                onChange={handleNewDeviceChange}
+                style={styles.modalInput}
+              >
+                {DEVICE_STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+
+              <label style={styles.modalCheckboxLabel}>
+                <input
+                  type="checkbox"
+                  name="includeOnMap"
+                  checked={newDevice.includeOnMap}
+                  onChange={handleNewDeviceChange}
+                />
+                Place this device on the floor map immediately
+              </label>
+            </div>
+
+            <div style={styles.modalActions}>
+              <button onClick={handleCloseAddDevice} style={styles.secondaryButton} disabled={saving}>
+                Cancel
+              </button>
+              <button onClick={handleAddDevice} style={styles.primaryButton} disabled={saving || loading}>
+                {saving ? 'Adding...' : 'Add Device'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedDevice && (
         <DevicePanel
           device={selectedDevice}
@@ -911,6 +1154,108 @@ const styles = {
     fontSize: '14px',
     fontWeight: '500',
     whiteSpace: 'nowrap',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(17, 24, 39, 0.45)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '20px',
+    zIndex: 30,
+  },
+  addDeviceModal: {
+    width: 'min(680px, 100%)',
+    maxHeight: 'calc(100vh - 40px)',
+    overflowY: 'auto',
+    backgroundColor: '#ffffff',
+    borderRadius: '16px',
+    boxShadow: '0 24px 60px rgba(15, 23, 42, 0.24)',
+    padding: '22px',
+  },
+  modalHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '12px',
+    marginBottom: '16px',
+  },
+  modalTitle: {
+    margin: 0,
+    fontSize: '24px',
+    color: '#1f2937',
+  },
+  modalSubtitle: {
+    marginTop: '4px',
+    color: '#6b7280',
+    fontSize: '14px',
+  },
+  modalCloseButton: {
+    border: 'none',
+    backgroundColor: 'transparent',
+    color: '#6b7280',
+    fontSize: '20px',
+    cursor: 'pointer',
+    padding: '4px 8px',
+  },
+  modalError: {
+    marginBottom: '14px',
+    padding: '12px 14px',
+    borderRadius: '10px',
+    backgroundColor: '#fdecea',
+    color: '#b23b3b',
+    fontWeight: '600',
+  },
+  addDeviceForm: {
+    display: 'grid',
+    gap: '12px',
+  },
+  modalInput: {
+    width: '100%',
+    padding: '12px 14px',
+    borderRadius: '10px',
+    border: '1px solid #d1d5db',
+    fontSize: '14px',
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+  },
+  modalSectionLabel: {
+    fontSize: '14px',
+    fontWeight: '700',
+    color: '#64748b',
+    marginTop: '2px',
+  },
+  modalCheckboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    color: '#334155',
+    fontWeight: '500',
+  },
+  modalActions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '10px',
+    marginTop: '18px',
+  },
+  secondaryButton: {
+    padding: '10px 16px',
+    borderRadius: '10px',
+    border: '1px solid #cbd5e1',
+    backgroundColor: '#ffffff',
+    color: '#334155',
+    fontWeight: '600',
+    cursor: 'pointer',
+  },
+  primaryButton: {
+    padding: '10px 18px',
+    borderRadius: '10px',
+    border: 'none',
+    backgroundColor: '#3ba57d',
+    color: '#ffffff',
+    fontWeight: '700',
+    cursor: 'pointer',
   },
 
 
