@@ -1,13 +1,32 @@
 const FIELD_GROUPS = {
-  computer: ['user_name', 'ip_address', 'os', 'ram', 'disk_space', 'device_age', 'serial_number', 'install_date', 'location'],
-  printer: ['ip_address', 'serial_number', 'install_date', 'location'],
-  network: ['ip_address', 'serial_number', 'install_date', 'location'],
-  mobile: ['user_name', 'ip_address', 'serial_number', 'install_date', 'location'],
-  camera: ['ip_address', 'serial_number', 'install_date', 'location'],
-  generic: ['user_name', 'ip_address', 'serial_number', 'install_date', 'location'],
+  computer: ['manufacturer', 'user_name', 'ip_address', 'os', 'ram', 'disk_space', 'device_age', 'serial_number', 'install_date', 'location'],
+  printer: ['manufacturer', 'ip_address', 'serial_number', 'install_date', 'location'],
+  network: ['manufacturer', 'ip_address', 'serial_number', 'install_date', 'location'],
+  mobile: ['manufacturer', 'user_name', 'ip_address', 'serial_number', 'install_date', 'location'],
+  camera: ['manufacturer', 'ip_address', 'serial_number', 'install_date', 'location'],
+  generic: ['manufacturer', 'user_name', 'ip_address', 'serial_number', 'install_date', 'location'],
 };
 
-const OPTIONAL_FIELDS = ['user_name', 'ip_address', 'os', 'ram', 'disk_space', 'device_age', 'serial_number', 'install_date', 'location'];
+const OPTIONAL_FIELDS = ['manufacturer', 'user_name', 'ip_address', 'os', 'ram', 'disk_space', 'device_age', 'serial_number', 'install_date', 'location'];
+const DEVICE_PAYLOAD_FIELDS = [
+  'name',
+  'ip_address',
+  'type',
+  'status',
+  'x_position',
+  'y_position',
+  'floor_id',
+  'icon',
+  'manufacturer',
+  'os',
+  'user_name',
+  'ram',
+  'disk_space',
+  'device_age',
+  'serial_number',
+  'install_date',
+  'location',
+];
 
 export const getDeviceCategory = (device = {}) => {
   const type = String(device.type || '').toLowerCase();
@@ -40,10 +59,16 @@ export const getCategoryLabel = (device = {}) => {
 
 export const sanitizeDevicePayload = (device = {}) => {
   const visible = getVisibleDeviceFields(device);
-  const next = { ...device };
+  const next = DEVICE_PAYLOAD_FIELDS.reduce((payload, field) => {
+    if (Object.prototype.hasOwnProperty.call(device, field)) {
+      payload[field] = device[field];
+    }
+
+    return payload;
+  }, {});
 
   OPTIONAL_FIELDS.forEach((field) => {
-    if (!visible.has(field)) {
+    if (!visible.has(field) || next[field] === null || next[field] === undefined) {
       next[field] = '';
     }
   });

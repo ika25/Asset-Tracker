@@ -7,6 +7,7 @@ import {
   updateSoftware,
 } from '../api/softwareApi';
 import { useCrudResource } from '../hooks/useCrudResource';
+import { sanitizeSoftwarePayload } from '../utils/inventoryPayloadConfig';
 
 const EMPTY_SOFTWARE = {
   name: '',
@@ -76,7 +77,7 @@ const SoftwarePage = () => {
   // =========================
   const handleAddSoftware = async () => {
     if (newSoftware.name && newSoftware.vendor) {
-      const created = await createItem(newSoftware);
+      const created = await createItem(sanitizeSoftwarePayload(newSoftware));
       if (created) {
         setNewSoftware(EMPTY_SOFTWARE);
       }
@@ -116,7 +117,7 @@ const SoftwarePage = () => {
   // Save edited software
   // =========================
   const handleSaveEdit = async () => {
-    const updated = await updateItem(editingId, editingData);
+    const updated = await updateItem(editingId, sanitizeSoftwarePayload(editingData));
     if (updated) {
       setEditingId(null);
     }

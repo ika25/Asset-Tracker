@@ -1,0 +1,2 @@
+ALTER TABLE device_details
+ADD COLUMN IF NOT EXISTS manufacturer VARCHAR(255);

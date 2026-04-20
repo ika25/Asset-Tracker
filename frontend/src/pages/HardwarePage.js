@@ -7,6 +7,7 @@ import {
   updateHardware,
 } from '../api/hardwareApi';
 import { useCrudResource } from '../hooks/useCrudResource';
+import { sanitizeHardwarePayload } from '../utils/inventoryPayloadConfig';
 
 const EMPTY_HARDWARE = {
   name: '',
@@ -78,7 +79,7 @@ const HardwarePage = () => {
   // =========================
   const handleAddHardware = async () => {
     if (newHardware.name && newHardware.type) {
-      const created = await createItem(newHardware);
+      const created = await createItem(sanitizeHardwarePayload(newHardware));
       if (created) {
         setNewHardware(EMPTY_HARDWARE);
       }
@@ -118,7 +119,7 @@ const HardwarePage = () => {
   // Save edited hardware
   // =========================
   const handleSaveEdit = async () => {
-    const updated = await updateItem(editingId, editingData);
+    const updated = await updateItem(editingId, sanitizeHardwarePayload(editingData));
     if (updated) {
       setEditingId(null);
     }

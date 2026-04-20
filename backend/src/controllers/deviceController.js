@@ -18,6 +18,7 @@ const DEVICE_SELECT = `
     d.y_position,
     d.floor_id,
     d.icon,
+    dd.manufacturer,
     dd.os,
     dd.ram,
     dd.disk_space,
@@ -64,6 +65,7 @@ export const createDevice = async (req, res, next) => {
     y_position,
     floor_id,
     icon,
+    manufacturer,
     os,
     user_name,
     ram,
@@ -98,9 +100,10 @@ export const createDevice = async (req, res, next) => {
     const deviceId = deviceResult.rows[0].id;
 
     await client.query(
-      `INSERT INTO device_details (device_id, os, user_name, ram, disk_space, device_age, serial_number, install_date, location)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO device_details (device_id, manufacturer, os, user_name, ram, disk_space, device_age, serial_number, install_date, location)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        ON CONFLICT (device_id) DO UPDATE SET
+         manufacturer = EXCLUDED.manufacturer,
          os = EXCLUDED.os,
          user_name = EXCLUDED.user_name,
          ram = EXCLUDED.ram,
@@ -112,6 +115,7 @@ export const createDevice = async (req, res, next) => {
          updated_at = NOW()`,
       [
         deviceId,
+        normalizeValue(manufacturer),
         normalizeValue(os),
         normalizeValue(user_name),
         normalizeValue(ram),
@@ -179,6 +183,7 @@ export const updateDevice = async (req, res, next) => {
       y_position: Object.prototype.hasOwnProperty.call(req.body, 'y_position') ? normalizeValue(req.body.y_position) : existing.y_position,
       floor_id: Object.prototype.hasOwnProperty.call(req.body, 'floor_id') ? normalizeValue(req.body.floor_id) : existing.floor_id,
       icon: Object.prototype.hasOwnProperty.call(req.body, 'icon') ? normalizeValue(req.body.icon) : existing.icon,
+      manufacturer: Object.prototype.hasOwnProperty.call(req.body, 'manufacturer') ? normalizeValue(req.body.manufacturer) : existing.manufacturer,
       os: Object.prototype.hasOwnProperty.call(req.body, 'os') ? normalizeValue(req.body.os) : existing.os,
       user_name: Object.prototype.hasOwnProperty.call(req.body, 'user_name') ? normalizeValue(req.body.user_name) : existing.user_name,
       ram: Object.prototype.hasOwnProperty.call(req.body, 'ram') ? normalizeValue(req.body.ram) : existing.ram,
@@ -214,9 +219,10 @@ export const updateDevice = async (req, res, next) => {
     );
 
     await client.query(
-      `INSERT INTO device_details (device_id, os, user_name, ram, disk_space, device_age, serial_number, install_date, location)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO device_details (device_id, manufacturer, os, user_name, ram, disk_space, device_age, serial_number, install_date, location)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        ON CONFLICT (device_id) DO UPDATE SET
+         manufacturer = EXCLUDED.manufacturer,
          os = EXCLUDED.os,
          user_name = EXCLUDED.user_name,
          ram = EXCLUDED.ram,
@@ -228,6 +234,7 @@ export const updateDevice = async (req, res, next) => {
          updated_at = NOW()`,
       [
         id,
+        nextDevice.manufacturer,
         nextDevice.os,
         nextDevice.user_name,
         nextDevice.ram,

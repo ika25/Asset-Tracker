@@ -648,6 +648,8 @@ const FloorPage = () => {
                 <div>{formatTooltipValue(hoveredDevice.ip_address)}</div>
                 <div style={styles.tooltipLabel}>Type</div>
                 <div>{formatTooltipValue(hoveredDevice.type)}</div>
+                <div style={styles.tooltipLabel}>Maker</div>
+                <div>{formatTooltipValue(hoveredDevice.manufacturer)}</div>
                 <div style={styles.tooltipLabel}>User</div>
                 <div>{formatTooltipValue(hoveredDevice.user_name)}</div>
                 <div style={styles.tooltipLabel}>Location</div>

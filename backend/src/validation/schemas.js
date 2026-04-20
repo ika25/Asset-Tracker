@@ -19,6 +19,7 @@ export const deviceCreateSchema = z.object({
   y_position: numberLike,
   floor_id: numberLike,
   icon: optionalString,
+  manufacturer: optionalString,
   os: optionalString,
   user_name: optionalString,
   ram: optionalString,

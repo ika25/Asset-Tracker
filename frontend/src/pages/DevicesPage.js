@@ -19,6 +19,7 @@ const ICON_OPTIONS = ['💻', '🖥️', '🖨️', '🛜', '📡', '🗄️', '
 const DEVICE_TYPE_OPTIONS = ['PC', 'Laptop', 'Printer', 'Router', 'Switch', 'Server', 'Phone', 'Camera', 'Tablet', 'Other'];
 const EMPTY_DEVICE = {
   name: '',
+  manufacturer: '',
   user_name: '',
   ip_address: '',
   type: '',
@@ -173,6 +174,7 @@ const DevicesPage = () => {
     const query = searchTerm.toLowerCase();
     const matchesSearch =
       (device.name || '').toLowerCase().includes(query) ||
+      (device.manufacturer || '').toLowerCase().includes(query) ||
       (device.ip_address || '').toLowerCase().includes(query) ||
       (device.os || '').toLowerCase().includes(query) ||
       (device.location || '').toLowerCase().includes(query);
@@ -220,6 +222,15 @@ const DevicesPage = () => {
                 ))}
               </select>
               <div style={styles.formHint}>{getCategoryLabel(newDevice)}</div>
+              {newDeviceFields.has('manufacturer') && (
+                <input
+                  name="manufacturer"
+                  placeholder="Device Maker / Brand"
+                  value={newDevice.manufacturer}
+                  onChange={handleChange}
+                  style={styles.input}
+                />
+              )}
               {newDeviceFields.has('user_name') && (
                 <input
                   name="user_name"
@@ -406,6 +417,15 @@ const DevicesPage = () => {
                         ))}
                       </select>
                       <div style={styles.formHint}>{getCategoryLabel(editingData)}</div>
+                      {editingFields.has('manufacturer') && (
+                        <input
+                          name="manufacturer"
+                          placeholder="Device Maker / Brand"
+                          value={editingData.manufacturer || ''}
+                          onChange={handleEditChange}
+                          style={styles.input}
+                        />
+                      )}
                       {editingFields.has('user_name') && (
                         <input
                           name="user_name"
@@ -526,6 +546,7 @@ const DevicesPage = () => {
                   <tr style={styles.tableHeader}>
                     <th style={styles.th}>Icon</th>
                     <th style={styles.th}>Name</th>
+                    <th style={styles.th}>Maker / Brand</th>
                     <th style={styles.th}>User Name</th>
                     <th style={styles.th}>IP Address</th>
                     <th style={styles.th}>Type</th>
@@ -546,6 +567,7 @@ const DevicesPage = () => {
                     <tr key={device.id} style={styles.tableRow}>
                       <td style={styles.td}>{device.icon || '💻'}</td>
                       <td style={styles.td}>{device.name}</td>
+                      <td style={styles.td}>{device.manufacturer || '-'}</td>
                       <td style={styles.td}>{device.user_name || '-'}</td>
                       <td style={styles.td}>{device.ip_address}</td>
                       <td style={styles.td}>{device.type}</td>

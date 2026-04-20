@@ -144,6 +144,19 @@ const DevicePanel = ({ device, onClose, refreshDevices }) => {
               <div style={styles.typeHint}>{getCategoryLabel(formData)}</div>
             </div>
 
+            {visibleFields.has('manufacturer') && (
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Maker / Brand</label>
+                <input
+                  name="manufacturer"
+                  value={formData.manufacturer || ''}
+                  onChange={handleChange}
+                  disabled={loading}
+                  style={styles.input}
+                />
+              </div>
+            )}
+
             {visibleFields.has('user_name') && (
               <div style={styles.formGroup}>
                 <label style={styles.label}>User Name</label>
