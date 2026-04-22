@@ -455,25 +455,33 @@ const FloorPage = () => {
   // =========================
   // FILTER DEVICES
   // =========================
-  const filteredDevices = devices.filter((device) => {
-    // Search filter
-    const query = searchFilter.toLowerCase();
-    const searchMatch =
-      (device.name || '').toLowerCase().includes(query) ||
-      (device.manufacturer || '').toLowerCase().includes(query) ||
-      (device.ip_address || '').toLowerCase().includes(query) ||
-      (device.type || '').toLowerCase().includes(query) ||
-      (device.user_name || '').toLowerCase().includes(query) ||
-      (device.location || '').toLowerCase().includes(query);
+  const searchQuery = searchFilter.trim().toLowerCase();
+  const isSearchActive = searchQuery.length > 0;
 
+  const matchesSearch = (device) => {
+    if (!isSearchActive) return true;
+
+    return (
+      (device.name || '').toLowerCase().includes(searchQuery) ||
+      (device.manufacturer || '').toLowerCase().includes(searchQuery) ||
+      (device.ip_address || '').toLowerCase().includes(searchQuery) ||
+      (device.type || '').toLowerCase().includes(searchQuery) ||
+      (device.user_name || '').toLowerCase().includes(searchQuery) ||
+      (device.location || '').toLowerCase().includes(searchQuery)
+    );
+  };
+
+  const filteredDevices = devices.filter((device) => {
     // Type filter
     const typeMatch = !typeFilter || (device.type || '').toLowerCase() === typeFilter.toLowerCase();
 
     // Status filter
     const statusMatch = !statusFilter || device.status === statusFilter;
 
-    return searchMatch && typeMatch && statusMatch;
+    return typeMatch && statusMatch;
   });
+
+  const highlightedMatches = filteredDevices.filter((device) => matchesSearch(device)).length;
 
   // Get unique device types
   const deviceTypes = [...new Set([...DEVICE_TYPE_OPTIONS, ...devices.map((d) => d.type).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
@@ -579,7 +587,7 @@ const FloorPage = () => {
         <div style={styles.searchContainer}>
           <input
             type="text"
-            placeholder="Search devices by name, maker, IP, type, user, or location..."
+            placeholder="Search devices by name, maker, IP, type, user, or location (matches glow)..."
             value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)}
             style={styles.searchInput}
@@ -598,6 +606,12 @@ const FloorPage = () => {
             </button>
           )}
         </div>
+
+        {isSearchActive && (
+          <div style={styles.matchInfo}>
+            {highlightedMatches} match{highlightedMatches === 1 ? '' : 'es'} highlighted on map
+          </div>
+        )}
       </div>
 
       {/* MAP AREA */}
@@ -641,6 +655,7 @@ const FloorPage = () => {
                 const hasY = device.y_position !== null && device.y_position !== undefined && device.y_position !== '';
                 return hasX && hasY;
               }).map((device) => {
+                const isSearchMatch = matchesSearch(device);
                 const hasX = device.x_position !== null && device.x_position !== undefined && device.x_position !== '';
                 const hasY = device.y_position !== null && device.y_position !== undefined && device.y_position !== '';
                 const rawX = hasX ? Number(device.x_position) : NaN;
@@ -669,6 +684,7 @@ const FloorPage = () => {
                     x={x}
                     y={y}
                     draggable
+                    opacity={isSearchActive && !isSearchMatch ? 0.28 : 1}
                     onClick={() => setSelectedDevice(device)}
                     onMouseEnter={(e) => {
                       setHoveredDevice(device);
@@ -679,6 +695,17 @@ const FloorPage = () => {
                     onDragStart={() => setHoveredDevice(null)}
                     onDragEnd={(e) => handleDragEnd(e, device)}
                   >
+                    {isSearchActive && isSearchMatch && (
+                      <Circle
+                        x={10}
+                        y={0}
+                        radius={ICON_HALF + 30}
+                        fill="rgba(59, 165, 125, 0.22)"
+                        shadowColor="#3ba57d"
+                        shadowBlur={24}
+                        listening={false}
+                      />
+                    )}
                     <Text
                       x={-ICON_HALF}
                       y={-ICON_HALF}
@@ -702,7 +729,8 @@ const FloorPage = () => {
                       y={-8}
                       text={device.name}
                       fontSize={12}
-                      fill="black"
+                      fill={isSearchActive && !isSearchMatch ? '#7f8c8d' : '#000000'}
+                      fontStyle={isSearchActive && isSearchMatch ? 'bold' : 'normal'}
                       listening={false}
                     />
                   </Group>
@@ -1055,6 +1083,15 @@ const styles = {
     borderRadius: '4px',
     fontSize: '13px',
     fontFamily: 'inherit',
+  },
+  matchInfo: {
+    padding: '8px 12px',
+    borderRadius: '999px',
+    backgroundColor: '#ecf9f3',
+    color: '#1f7a59',
+    fontSize: '12px',
+    fontWeight: '700',
+    whiteSpace: 'nowrap',
   },
   clearButton: {
     position: 'absolute',
