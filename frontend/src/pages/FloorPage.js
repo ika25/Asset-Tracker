@@ -58,6 +58,8 @@ const FloorPage = () => {
   const [showGrid, setShowGrid] = useState(true);
   const [showAddDeviceModal, setShowAddDeviceModal] = useState(false);
   const [newDevice, setNewDevice] = useState(EMPTY_DEVICE);
+  const [isPlacingDevice, setIsPlacingDevice] = useState(false);
+  const [pendingPlacement, setPendingPlacement] = useState(null);
   const [hoveredDevice, setHoveredDevice] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [mapSize, setMapSize] = useState({
@@ -295,20 +297,39 @@ const FloorPage = () => {
 
   const handleOpenAddDevice = () => {
     setError('');
-    setNewDevice(EMPTY_DEVICE);
-    setShowAddDeviceModal(true);
+    setSelectedDevice(null);
+    setShowAddDeviceModal(false);
+    setPendingPlacement(null);
+    setIsPlacingDevice(true);
   };
 
   const handleCloseAddDevice = () => {
     setShowAddDeviceModal(false);
+    setIsPlacingDevice(false);
+    setPendingPlacement(null);
     setNewDevice(EMPTY_DEVICE);
+  };
+
+  const openAddModalAtPlacement = (x, y) => {
+    const snappedX = Math.round(Math.max(0, Math.min(x, BASE_MAP_WIDTH)) / SNAP_SIZE) * SNAP_SIZE;
+    const snappedY = Math.round(Math.max(0, Math.min(y, BASE_MAP_HEIGHT)) / SNAP_SIZE) * SNAP_SIZE;
+
+    setPendingPlacement({ x: snappedX, y: snappedY });
+    setNewDevice({
+      ...EMPTY_DEVICE,
+      includeOnMap: true,
+      x_position: snappedX,
+      y_position: snappedY,
+    });
+    setIsPlacingDevice(false);
+    setShowAddDeviceModal(true);
   };
 
   const handleAddDevice = async () => {
     const payload = sanitizeDevicePayload({
       ...newDevice,
-      x_position: newDevice.includeOnMap ? 100 : null,
-      y_position: newDevice.includeOnMap ? 100 : null,
+      x_position: newDevice.includeOnMap ? (newDevice.x_position ?? pendingPlacement?.x ?? 100) : null,
+      y_position: newDevice.includeOnMap ? (newDevice.y_position ?? pendingPlacement?.y ?? 100) : null,
     });
 
     delete payload.includeOnMap;
@@ -324,6 +345,21 @@ const FloorPage = () => {
   // =========================
   const handleStageClick = (e) => {
     if (e.target.draggable()) return;
+
+    if (isPlacingDevice) {
+      const stage = e.target.getStage();
+      const pointer = stage?.getPointerPosition();
+      if (!pointer) return;
+
+      const mapX = (pointer.x - position.x) / zoom;
+      const mapY = (pointer.y - position.y) / zoom;
+      const logicalX = mapX / mapScaleX;
+      const logicalY = mapY / mapScaleY;
+
+      openAddModalAtPlacement(logicalX, logicalY);
+      return;
+    }
+
     setSelectedDevice(null);
   };
 
@@ -530,10 +566,20 @@ const FloorPage = () => {
           <button
             onClick={handleOpenAddDevice}
             style={styles.toolButton}
-            title="Add a device from the floor page"
+            title="Click and then place the device on the map"
           >
-            Add Device
+            {isPlacingDevice ? 'Click Map to Place' : 'Add Device'}
           </button>
+
+          {isPlacingDevice && (
+            <button
+              onClick={() => setIsPlacingDevice(false)}
+              style={styles.cancelPlacementButton}
+              title="Cancel map placement mode"
+            >
+              Cancel Placement
+            </button>
+          )}
 
           {/* Grid Toggle */}
           <button
@@ -612,6 +658,12 @@ const FloorPage = () => {
             {highlightedMatches} match{highlightedMatches === 1 ? '' : 'es'} highlighted on map
           </div>
         )}
+
+        {isPlacingDevice && (
+          <div style={styles.placementInfo}>
+            Click on the map to choose where the new device should be placed.
+          </div>
+        )}
       </div>
 
       {/* MAP AREA */}
@@ -629,7 +681,7 @@ const FloorPage = () => {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
-            style={{ cursor: isPanning ? 'grabbing' : 'grab' }}
+            style={{ cursor: isPlacingDevice ? 'crosshair' : (isPanning ? 'grabbing' : 'grab') }}
           >
             <Layer>
               <Group x={position.x} y={position.y} scaleX={zoom} scaleY={zoom}>
@@ -809,6 +861,12 @@ const FloorPage = () => {
 
             {error && <div style={styles.modalError}>{error}</div>}
 
+            {pendingPlacement && (
+              <div style={styles.placementSummary}>
+                Selected map position: X {pendingPlacement.x}, Y {pendingPlacement.y}
+              </div>
+            )}
+
             <div style={styles.addDeviceForm}>
               <input
                 name="name"
@@ -951,9 +1009,23 @@ const FloorPage = () => {
                 />
                 Place this device on the floor map immediately
               </label>
+
+              {newDevice.includeOnMap && pendingPlacement && (
+                <div style={styles.placementHint}>Coordinates will be saved as X {pendingPlacement.x}, Y {pendingPlacement.y}.</div>
+              )}
             </div>
 
             <div style={styles.modalActions}>
+              <button
+                onClick={() => {
+                  setShowAddDeviceModal(false);
+                  setIsPlacingDevice(true);
+                }}
+                style={styles.secondaryButton}
+                disabled={saving}
+              >
+                Pick Different Spot
+              </button>
               <button onClick={handleCloseAddDevice} style={styles.secondaryButton} disabled={saving}>
                 Cancel
               </button>
@@ -1060,6 +1132,16 @@ const styles = {
     fontWeight: '600',
     transition: 'all 0.2s ease',
   },
+  cancelPlacementButton: {
+    padding: '8px 14px',
+    backgroundColor: '#ffffff',
+    color: '#b23b3b',
+    border: '1px solid #efc2c2',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '600',
+  },
   zoomLevel: {
     marginLeft: '10px',
     padding: '6px 12px',
@@ -1089,6 +1171,15 @@ const styles = {
     borderRadius: '999px',
     backgroundColor: '#ecf9f3',
     color: '#1f7a59',
+    fontSize: '12px',
+    fontWeight: '700',
+    whiteSpace: 'nowrap',
+  },
+  placementInfo: {
+    padding: '8px 12px',
+    borderRadius: '999px',
+    backgroundColor: '#fff8e6',
+    color: '#8a6d1e',
     fontSize: '12px',
     fontWeight: '700',
     whiteSpace: 'nowrap',
@@ -1244,6 +1335,14 @@ const styles = {
     color: '#b23b3b',
     fontWeight: '600',
   },
+  placementSummary: {
+    marginBottom: '14px',
+    padding: '10px 12px',
+    borderRadius: '10px',
+    backgroundColor: '#eef6ff',
+    color: '#2c5282',
+    fontWeight: '600',
+  },
   addDeviceForm: {
     display: 'grid',
     gap: '12px',
@@ -1269,6 +1368,11 @@ const styles = {
     gap: '10px',
     color: '#334155',
     fontWeight: '500',
+  },
+  placementHint: {
+    fontSize: '12px',
+    color: '#64748b',
+    fontWeight: '600',
   },
   modalActions: {
     display: 'flex',
