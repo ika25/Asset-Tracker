@@ -31,6 +31,7 @@ const DEVICE_SELECT = `
   LEFT JOIN device_details dd ON dd.device_id = d.id
 `;
 
+// Form fields often arrive as '' or undefined. We store those as NULL in Postgres.
 const normalizeValue = (value) => (value === '' || value === undefined ? null : value);
 
 const insertStatusHistory = async (client, { deviceId, previousStatus, newStatus, actorName, metadata }) => {
@@ -79,6 +80,8 @@ export const createDevice = async (req, res, next) => {
   const client = await pool.connect();
 
   try {
+    // Create base row, details row, audit, and status history as one atomic operation.
+    // If any step fails, rollback keeps data and audit trail consistent.
     await client.query('BEGIN');
 
     const deviceResult = await client.query(
@@ -99,6 +102,7 @@ export const createDevice = async (req, res, next) => {
 
     const deviceId = deviceResult.rows[0].id;
 
+    // Optional metadata stays in device_details so the main devices table remains lean.
     await client.query(
       `INSERT INTO device_details (device_id, manufacturer, os, user_name, ram, disk_space, device_age, serial_number, install_date, location)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -165,6 +169,7 @@ export const updateDevice = async (req, res, next) => {
   const client = await pool.connect();
 
   try {
+    // Update device + details + audit together so history always matches persisted data.
     await client.query('BEGIN');
 
     const existing = await getDeviceById(client, id);
@@ -175,6 +180,7 @@ export const updateDevice = async (req, res, next) => {
     }
 
     const nextDevice = {
+      // Support partial updates: if a field is omitted, keep its current DB value.
       name: Object.prototype.hasOwnProperty.call(req.body, 'name') ? normalizeValue(req.body.name) : existing.name,
       ip_address: Object.prototype.hasOwnProperty.call(req.body, 'ip_address') ? normalizeValue(req.body.ip_address) : existing.ip_address,
       type: Object.prototype.hasOwnProperty.call(req.body, 'type') ? normalizeValue(req.body.type) : existing.type,
@@ -219,6 +225,7 @@ export const updateDevice = async (req, res, next) => {
     );
 
     await client.query(
+      // Upsert handles both normal updates and legacy rows that do not yet have details.
       `INSERT INTO device_details (device_id, manufacturer, os, user_name, ram, disk_space, device_age, serial_number, install_date, location)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        ON CONFLICT (device_id) DO UPDATE SET

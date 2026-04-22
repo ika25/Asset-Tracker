@@ -38,6 +38,9 @@ const EMPTY_DEVICE = {
   status: 'Active',
 };
 
+// Important: x/y positions are saved in logical map coordinates (BASE_MAP_* scale),
+// not screen pixels. This keeps placement stable across zoom levels and screen sizes.
+
 const FloorPage = () => {
   const BASE_MAP_WIDTH = 1200;
   const BASE_MAP_HEIGHT = 700;
@@ -311,6 +314,8 @@ const FloorPage = () => {
   };
 
   const openAddModalAtPlacement = (x, y) => {
+    // Clamp placement to map bounds and snap to grid before opening the add form.
+    // This prevents out-of-bounds or awkward fractional positions from being saved.
     const snappedX = Math.round(Math.max(0, Math.min(x, BASE_MAP_WIDTH)) / SNAP_SIZE) * SNAP_SIZE;
     const snappedY = Math.round(Math.max(0, Math.min(y, BASE_MAP_HEIGHT)) / SNAP_SIZE) * SNAP_SIZE;
 
@@ -351,6 +356,8 @@ const FloorPage = () => {
       const pointer = stage?.getPointerPosition();
       if (!pointer) return;
 
+      // Translate click position from screen space back into map space:
+      // 1) remove pan offset, 2) undo zoom, 3) convert scaled image coords to logical coords.
       const mapX = (pointer.x - position.x) / zoom;
       const mapY = (pointer.y - position.y) / zoom;
       const logicalX = mapX / mapScaleX;
@@ -514,6 +521,8 @@ const FloorPage = () => {
     // Status filter
     const statusMatch = !statusFilter || device.status === statusFilter;
 
+    // We intentionally do NOT filter by search here.
+    // Instead, search is visual (glow + dim), so users still see map context while locating matches.
     return typeMatch && statusMatch;
   });
 

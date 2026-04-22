@@ -9,6 +9,9 @@ import {
 import { useCrudResource } from '../hooks/useCrudResource';
 import { sanitizeSoftwarePayload } from '../utils/inventoryPayloadConfig';
 
+// Software page keeps add/list/edit together and reuses shared CRUD behavior
+// so validation and error handling stay consistent with other pages.
+
 const EMPTY_SOFTWARE = {
   name: '',
   version: '',
@@ -20,7 +23,7 @@ const EMPTY_SOFTWARE = {
 };
 
 const SoftwarePage = () => {
-  // Get URL query parameters
+  // Support deep links like /software?view=add.
   const [searchParams] = useSearchParams();
   const viewParam = searchParams.get('view');
 
@@ -48,23 +51,21 @@ const SoftwarePage = () => {
     deleteErrorMessage: 'Failed to delete software.',
   });
 
-  // State for new software form
+  // Draft values for the add form.
   const [newSoftware, setNewSoftware] = useState(EMPTY_SOFTWARE);
 
-  // State for editing
+  // Snapshot of whichever software row is currently being edited.
   const [editingData, setEditingData] = useState(EMPTY_SOFTWARE);
 
   const normalizeDateValue = (value) => (value ? String(value).split('T')[0] : '');
   const formatDate = (value) => normalizeDateValue(value) || '-';
 
-  // Update active view when URL changes
+  // Keep the view aligned with query param navigation.
   useEffect(() => {
     setActiveView(viewParam === 'add' ? 'add' : 'list');
   }, [viewParam]);
 
-  // =========================
-  // Handle input changes
-  // =========================
+  // Generic add-form change handler.
   const handleChange = (e) => {
     setNewSoftware({
       ...newSoftware,
@@ -72,11 +73,9 @@ const SoftwarePage = () => {
     });
   };
 
-  // =========================
-  // Add new software
-  // =========================
   const handleAddSoftware = async () => {
     if (newSoftware.name && newSoftware.vendor) {
+      // Sanitizer keeps payload aligned with backend schema rules.
       const created = await createItem(sanitizeSoftwarePayload(newSoftware));
       if (created) {
         setNewSoftware(EMPTY_SOFTWARE);
@@ -84,28 +83,22 @@ const SoftwarePage = () => {
     }
   };
 
-  // =========================
-  // Delete software
-  // =========================
+  // Delete uses shared hook; refresh/error behavior is centralized.
   const handleDelete = async (id) => {
     await deleteItem(id);
   };
 
-  // =========================
-  // Start editing
-  // =========================
   const handleStartEdit = (software) => {
     setEditingId(software.id);
     setEditingData({
       ...software,
+      // Date inputs expect YYYY-MM-DD, so drop the time section if present.
       license_expiry: normalizeDateValue(software.license_expiry),
       installation_date: normalizeDateValue(software.installation_date),
     });
   };
 
-  // =========================
-  // Handle edit input changes
-  // =========================
+  // Generic edit-form change handler.
   const handleEditChange = (e) => {
     setEditingData({
       ...editingData,
@@ -113,19 +106,15 @@ const SoftwarePage = () => {
     });
   };
 
-  // =========================
-  // Save edited software
-  // =========================
   const handleSaveEdit = async () => {
+    // Reuse same sanitizer as create path to prevent payload drift.
     const updated = await updateItem(editingId, sanitizeSoftwarePayload(editingData));
     if (updated) {
       setEditingId(null);
     }
   };
 
-  // =========================
-  // Cancel editing
-  // =========================
+  // Leave edit mode and discard unsaved local changes.
   const handleCancelEdit = () => {
     setEditingId(null);
   };
@@ -140,6 +129,7 @@ const SoftwarePage = () => {
 
   const filteredSoftware = softwareList.filter((software) => {
     const query = searchTerm.toLowerCase();
+    // These are the fields people usually remember when searching for software.
     const matchesSearch =
       (software.name || '').toLowerCase().includes(query) ||
       (software.version || '').toLowerCase().includes(query) ||

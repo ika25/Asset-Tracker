@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getApiErrorMessage } from '../api/client';
 
+/**
+ * Reusable CRUD helper for list-style pages (devices, hardware, software, etc.).
+ *
+ * What this gives each page:
+ * - `items`, `loading`, and `saving` state out of the box.
+ * - One consistent error message string for banners/toasts.
+ * - Helper actions (`createItem`, `updateItem`, `deleteItem`) that refresh data after success.
+ *
+ * Expectation:
+ * - listFn/createFn/updateFn/deleteFn should return axios-like responses.
+ */
 export const useCrudResource = ({
   listFn,
   createFn,
@@ -16,6 +27,7 @@ export const useCrudResource = ({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Keep fetch state handling in one place so every page behaves the same on load/reload.
   const refresh = useCallback(async () => {
     try {
       setLoading(true);
@@ -33,6 +45,7 @@ export const useCrudResource = ({
     refresh();
   }, [refresh]);
 
+  // After create/update/delete, re-read from the API so UI reflects true server state.
   const createItem = useCallback(async (payload) => {
     try {
       setSaving(true);

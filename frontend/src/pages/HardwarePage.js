@@ -9,6 +9,9 @@ import {
 import { useCrudResource } from '../hooks/useCrudResource';
 import { sanitizeHardwarePayload } from '../utils/inventoryPayloadConfig';
 
+// Hardware page keeps add/list/edit in one place and relies on the shared CRUD hook
+// so error/loading behavior is consistent with the other inventory pages.
+
 const EMPTY_HARDWARE = {
   name: '',
   type: '',
@@ -22,7 +25,7 @@ const EMPTY_HARDWARE = {
 };
 
 const HardwarePage = () => {
-  // Get URL query parameters
+  // Support deep links like /hardware?view=add.
   const [searchParams] = useSearchParams();
   const viewParam = searchParams.get('view');
 
@@ -50,23 +53,21 @@ const HardwarePage = () => {
     deleteErrorMessage: 'Failed to delete hardware.',
   });
 
-  // State for new hardware form
+  // Draft values for the add form.
   const [newHardware, setNewHardware] = useState(EMPTY_HARDWARE);
 
-  // State for editing
+  // Snapshot of the item currently being edited.
   const [editingData, setEditingData] = useState(EMPTY_HARDWARE);
 
   const normalizeDateValue = (value) => (value ? String(value).split('T')[0] : '');
   const formatDate = (value) => normalizeDateValue(value) || '-';
 
-  // Update active view when URL changes
+  // Keep UI in sync when user navigates with query params.
   useEffect(() => {
     setActiveView(viewParam === 'add' ? 'add' : 'list');
   }, [viewParam]);
 
-  // =========================
-  // Handle input changes
-  // =========================
+  // Generic add-form change handler.
   const handleChange = (e) => {
     setNewHardware({
       ...newHardware,
@@ -74,11 +75,9 @@ const HardwarePage = () => {
     });
   };
 
-  // =========================
-  // Add new hardware
-  // =========================
   const handleAddHardware = async () => {
     if (newHardware.name && newHardware.type) {
+      // Use shared sanitizer so payload shape always matches backend validation.
       const created = await createItem(sanitizeHardwarePayload(newHardware));
       if (created) {
         setNewHardware(EMPTY_HARDWARE);
@@ -86,28 +85,22 @@ const HardwarePage = () => {
     }
   };
 
-  // =========================
-  // Delete hardware
-  // =========================
+  // Delete uses shared hook; list refresh is handled there.
   const handleDelete = async (id) => {
     await deleteItem(id);
   };
 
-  // =========================
-  // Start editing
-  // =========================
   const handleStartEdit = (hardware) => {
     setEditingId(hardware.id);
     setEditingData({
       ...hardware,
+      // Date inputs expect YYYY-MM-DD, so trim timestamp if API returns one.
       purchase_date: normalizeDateValue(hardware.purchase_date),
       warranty_expiry: normalizeDateValue(hardware.warranty_expiry),
     });
   };
 
-  // =========================
-  // Handle edit input changes
-  // =========================
+  // Generic edit-form change handler.
   const handleEditChange = (e) => {
     setEditingData({
       ...editingData,
@@ -115,19 +108,15 @@ const HardwarePage = () => {
     });
   };
 
-  // =========================
-  // Save edited hardware
-  // =========================
   const handleSaveEdit = async () => {
+    // Same sanitizer for create/update keeps request format consistent over time.
     const updated = await updateItem(editingId, sanitizeHardwarePayload(editingData));
     if (updated) {
       setEditingId(null);
     }
   };
 
-  // =========================
-  // Cancel editing
-  // =========================
+  // Exit edit mode without persisting local edits.
   const handleCancelEdit = () => {
     setEditingId(null);
   };
@@ -142,6 +131,7 @@ const HardwarePage = () => {
 
   const filteredHardware = hardwareList.filter((hardware) => {
     const query = searchTerm.toLowerCase();
+    // Search is broad on purpose: users usually remember one clue, not exact fields.
     const matchesSearch =
       (hardware.name || '').toLowerCase().includes(query) ||
       (hardware.model || '').toLowerCase().includes(query) ||

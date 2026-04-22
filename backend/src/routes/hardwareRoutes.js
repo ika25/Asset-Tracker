@@ -1,7 +1,5 @@
-// Express router
 import express from 'express';
 
-// Controller functions
 import {
   getHardware,
   createHardware,
@@ -13,12 +11,16 @@ import { hardwareCreateSchema, hardwareUpdateSchema, idParamSchema } from '../va
 
 const router = express.Router();
 
-// =========================
-// Routes
-// =========================
-router.get('/', getHardware);        // GET all
-router.post('/', validateBody(hardwareCreateSchema), createHardware);    // CREATE
-router.put('/:id', validateParams(idParamSchema), validateBody(hardwareUpdateSchema), updateHardware);  // UPDATE
-router.delete('/:id', validateParams(idParamSchema), deleteHardware); // DELETE
+// Hardware list endpoint.
+router.get('/', getHardware);
+
+// Create requires body validation before controller logic runs.
+router.post('/', validateBody(hardwareCreateSchema), createHardware);
+
+// Update validates both route id and request body.
+router.put('/:id', validateParams(idParamSchema), validateBody(hardwareUpdateSchema), updateHardware);
+
+// Delete only needs a valid id param.
+router.delete('/:id', validateParams(idParamSchema), deleteHardware);
 
 export default router;

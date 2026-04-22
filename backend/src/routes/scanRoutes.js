@@ -3,7 +3,7 @@ import { runScan } from '../controllers/scanController.js';
 
 const router = express.Router();
 
-// Allow GET for testing in browser
-router.get('/', runScan); // ✅ add this
+// GET keeps scan easy to trigger from browser/manual testing.
+router.get('/', runScan);
 
 export default router;

@@ -7,6 +7,7 @@ import {
 } from '../utils/audit.js';
 import { HttpError } from '../errors/httpError.js';
 
+// Convert optional empty fields to NULL before writing to Postgres.
 const normalize = (v) => (v === '' || v === undefined ? null : v);
 
 const getSoftwareById = async (client, id) => {
@@ -16,6 +17,7 @@ const getSoftwareById = async (client, id) => {
 
 export const getSoftware = async (req, res, next) => {
   try {
+    // Keep a stable order so list pagination/filtering behaves predictably.
     const result = await pool.query('SELECT * FROM software ORDER BY id ASC');
     res.json(result.rows);
   } catch (err) {
@@ -27,6 +29,7 @@ export const createSoftware = async (req, res, next) => {
   const { name, version, vendor, license_type, license_expiry, installed_on, installation_date } = req.body;
   const client = await pool.connect();
   try {
+    // Insert + audit are one unit so we never have data without history (or vice versa).
     await client.query('BEGIN');
     const result = await client.query(
       `INSERT INTO software (name, version, vendor, license_type, license_expiry, installed_on, installation_date)
@@ -59,6 +62,7 @@ export const updateSoftware = async (req, res, next) => {
   const { name, version, vendor, license_type, license_expiry, installed_on, installation_date } = req.body;
   const client = await pool.connect();
   try {
+    // Run update and audit together so the audit trail always describes real DB state.
     await client.query('BEGIN');
 
     const existing = await getSoftwareById(client, id);
@@ -76,6 +80,7 @@ export const updateSoftware = async (req, res, next) => {
     );
 
     const changes = diffFields(existing, result.rows[0]);
+    // Skip no-op audit events when payload does not actually change any fields.
     if (Object.keys(changes).length > 0) {
       await insertAuditLog(client, {
         entityType: 'software',
@@ -101,6 +106,7 @@ export const deleteSoftware = async (req, res, next) => {
   const { id } = req.params;
   const client = await pool.connect();
   try {
+    // Grab "before" state so the delete audit entry is still meaningful after row removal.
     await client.query('BEGIN');
     const existing = await getSoftwareById(client, id);
     await client.query('DELETE FROM software WHERE id=$1', [id]);

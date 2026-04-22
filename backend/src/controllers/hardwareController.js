@@ -1,4 +1,4 @@
-// DB pool
+// This controller handles hardware CRUD and writes matching audit events.
 import pool from '../config/db.js';
 import {
   actorNameFromRequest,
@@ -8,6 +8,7 @@ import {
 } from '../utils/audit.js';
 import { HttpError } from '../errors/httpError.js';
 
+// UI forms submit empty strings for optional fields; DB should store those as NULL.
 const normalize = (v) => (v === '' || v === undefined ? null : v);
 
 const getHardwareById = async (client, id) => {
@@ -15,9 +16,7 @@ const getHardwareById = async (client, id) => {
   return rows[0] || null;
 };
 
-// =========================
-// GET all hardware
-// =========================
+// Return newest hardware first so recently added assets are easiest to find.
 export const getHardware = async (req, res, next) => {
   try {
     const result = await pool.query(`SELECT * FROM hardware ORDER BY id DESC`);
@@ -27,14 +26,12 @@ export const getHardware = async (req, res, next) => {
   }
 };
 
-// =========================
-// CREATE hardware
-// =========================
 export const createHardware = async (req, res, next) => {
   const { name, type, manufacturer, model, purchase_date, cost, warranty_expiry, status, location } = req.body;
   const client = await pool.connect();
 
   try {
+    // Create the row and write audit together. If either fails, rollback keeps history trustworthy.
     await client.query('BEGIN');
     const result = await client.query(
       `INSERT INTO hardware (name, type, manufacturer, model, purchase_date, cost, warranty_expiry, status, location)
@@ -63,15 +60,13 @@ export const createHardware = async (req, res, next) => {
   }
 };
 
-// =========================
-// UPDATE hardware
-// =========================
 export const updateHardware = async (req, res, next) => {
   const { id } = req.params;
   const { name, type, manufacturer, model, purchase_date, cost, warranty_expiry, status, location } = req.body;
   const client = await pool.connect();
 
   try {
+    // Update + audit share one transaction so the log always reflects what actually persisted.
     await client.query('BEGIN');
 
     const existing = await getHardwareById(client, id);
@@ -92,6 +87,7 @@ export const updateHardware = async (req, res, next) => {
     );
 
     const changes = diffFields(existing, result.rows[0]);
+    // If nothing changed, skip creating an "updated" audit entry to avoid noisy history.
     if (Object.keys(changes).length > 0) {
       await insertAuditLog(client, {
         entityType: 'hardware',
@@ -113,14 +109,12 @@ export const updateHardware = async (req, res, next) => {
   }
 };
 
-// =========================
-// DELETE hardware
-// =========================
 export const deleteHardware = async (req, res, next) => {
   const { id } = req.params;
   const client = await pool.connect();
 
   try {
+    // Delete and audit should either both happen or both rollback.
     await client.query('BEGIN');
     const existing = await getHardwareById(client, id);
     await client.query(`DELETE FROM hardware WHERE id = $1`, [id]);

@@ -8,10 +8,10 @@ import { assignSoftwareSchema, deviceIdParamSchema } from '../validation/schemas
 
 const router = express.Router();
 
-// Assign software
+// Assign a software item to a device.
 router.post('/', validateBody(assignSoftwareSchema), assignSoftware);
 
-// Get software for device
+// Read software assignments for one device.
 router.get('/:deviceId', validateParams(deviceIdParamSchema), getDeviceSoftware);
 
 export default router;
