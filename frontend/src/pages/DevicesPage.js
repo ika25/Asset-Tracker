@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 // Import API functions
+import { getApiErrorMessage } from '../api/client';
 import {
   getDevices,
   createDevice,
   deleteDevice,
   updateDevice,
 } from '../api/deviceApi';
+import { runNetworkScan } from '../api/scanApi';
 import {
   DEVICE_STATUS_OPTIONS,
   DEVICE_TYPE_OPTIONS,
@@ -35,6 +37,11 @@ const EMPTY_DEVICE = {
   location: '',
   status: 'Active',
 };
+const DEFAULT_SCAN_TARGET = '192.168.1.0/24';
+const DEFAULT_MAP_CENTER = {
+  x: 600,
+  y: 350,
+};
 
 const DevicesPage = () => {
   // Get URL query parameters
@@ -46,6 +53,12 @@ const DevicesPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [typeFilter, setTypeFilter] = useState('All');
+  const [scanTarget, setScanTarget] = useState(DEFAULT_SCAN_TARGET);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanError, setScanError] = useState('');
+  const [scanResults, setScanResults] = useState([]);
+  const [scanScannedAt, setScanScannedAt] = useState('');
+  const [scanImportingByIp, setScanImportingByIp] = useState({});
   const {
     items: devices,
     loading,
@@ -169,6 +182,57 @@ const DevicesPage = () => {
     setStatusFilter('All');
   };
 
+  const handleRunScan = async () => {
+    try {
+      setScanLoading(true);
+      setScanError('');
+      const response = await runNetworkScan(scanTarget);
+      setScanResults(response?.data?.devices || []);
+      setScanScannedAt(response?.data?.scannedAt || '');
+    } catch (err) {
+      setScanError(getApiErrorMessage(err, 'Network scan failed.'));
+      setScanResults([]);
+      setScanScannedAt('');
+    } finally {
+      setScanLoading(false);
+    }
+  };
+
+  const existingIps = new Set(
+    devices
+      .map((device) => String(device.ip_address || '').trim())
+      .filter(Boolean)
+  );
+
+  const handleAddScannedDevice = async (host) => {
+    if (!host?.ipAddress || existingIps.has(host.ipAddress)) {
+      return;
+    }
+
+    setScanImportingByIp((prev) => ({ ...prev, [host.ipAddress]: true }));
+
+    const payload = sanitizeDevicePayload({
+      ...EMPTY_DEVICE,
+      name: host.hostname || `Discovered ${host.ipAddress}`,
+      manufacturer: host.vendor || '',
+      ip_address: host.ipAddress,
+      type: 'Other',
+      icon: host.vendor ? '🛜' : '📡',
+      location: 'Auto-discovered',
+      status: 'Active',
+      // Put discovered devices in the floor map center so they are easy to find.
+      x_position: DEFAULT_MAP_CENTER.x,
+      y_position: DEFAULT_MAP_CENTER.y,
+    });
+
+    const created = await createItem(payload);
+    if (!created) {
+      setScanError('Failed to import scanned device.');
+    }
+
+    setScanImportingByIp((prev) => ({ ...prev, [host.ipAddress]: false }));
+  };
+
   const deviceTypes = [...new Set([...DEVICE_TYPE_OPTIONS, ...devices.map((d) => d.type).filter(Boolean)])];
   const deviceStatuses = [
     ...DEVICE_STATUS_OPTIONS,
@@ -189,6 +253,11 @@ const DevicesPage = () => {
     const matchesType = typeFilter === 'All' || device.type === typeFilter;
     return matchesSearch && matchesStatus && matchesType;
   });
+
+  const scannedDevices = scanResults.map((host) => ({
+    ...host,
+    alreadyTracked: existingIps.has(String(host.ipAddress || '').trim()),
+  }));
 
   return (
     <div style={styles.container}>
@@ -351,6 +420,63 @@ const DevicesPage = () => {
           <div style={styles.section}>
             <h2>All Machines</h2>
             {error && <div style={styles.errorBanner}>{error}</div>}
+            <div style={styles.scanPanel}>
+              <div style={styles.scanHeaderRow}>
+                <div>
+                  <h3 style={styles.scanTitle}>Network Discovery</h3>
+                  <div style={styles.scanHint}>Scan a subnet to find active hosts and import them into inventory.</div>
+                </div>
+                <div style={styles.scanControls}>
+                  <input
+                    value={scanTarget}
+                    onChange={(e) => setScanTarget(e.target.value)}
+                    placeholder="Scan target (example: 192.168.1.0/24)"
+                    style={styles.filterInput}
+                  />
+                  <button onClick={handleRunScan} style={styles.submitButton} disabled={scanLoading || loading || saving}>
+                    {scanLoading ? 'Scanning...' : 'Run Scan'}
+                  </button>
+                </div>
+              </div>
+              {scanError && <div style={styles.errorBanner}>{scanError}</div>}
+              {scanScannedAt && <div style={styles.scanMeta}>Last scan: {new Date(scanScannedAt).toLocaleString()}</div>}
+              {scannedDevices.length > 0 && (
+                <div style={styles.scanTableWrap}>
+                  <table style={styles.table}>
+                    <thead>
+                      <tr style={styles.tableHeader}>
+                        <th style={styles.th}>Hostname</th>
+                        <th style={styles.th}>IP Address</th>
+                        <th style={styles.th}>MAC Address</th>
+                        <th style={styles.th}>Vendor</th>
+                        <th style={styles.th}>Inventory</th>
+                        <th style={styles.th}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scannedDevices.map((host) => (
+                        <tr key={host.ipAddress || host.hostname} style={styles.tableRow}>
+                          <td style={styles.td}>{host.hostname || '-'}</td>
+                          <td style={styles.td}>{host.ipAddress || '-'}</td>
+                          <td style={styles.td}>{host.macAddress || '-'}</td>
+                          <td style={styles.td}>{host.vendor || '-'}</td>
+                          <td style={styles.td}>{host.alreadyTracked ? 'Already tracked' : 'Not tracked'}</td>
+                          <td style={styles.td}>
+                            <button
+                              onClick={() => handleAddScannedDevice(host)}
+                              style={host.alreadyTracked ? styles.disabledButton : styles.editButton}
+                              disabled={host.alreadyTracked || scanImportingByIp[host.ipAddress] || saving}
+                            >
+                              {scanImportingByIp[host.ipAddress] ? 'Adding...' : host.alreadyTracked ? 'Added' : 'Add to Inventory'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
             <div style={styles.filterBar}>
               <input
                 placeholder="Search name, maker, IP, OS, location"
@@ -735,6 +861,45 @@ const styles = {
     marginTop: '14px',
     marginBottom: '8px',
   },
+  scanPanel: {
+    marginTop: '14px',
+    marginBottom: '20px',
+    padding: '14px',
+    border: '1px solid #dde4e7',
+    borderRadius: '8px',
+    backgroundColor: '#fafcfd',
+  },
+  scanHeaderRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '12px',
+    flexWrap: 'wrap',
+  },
+  scanTitle: {
+    margin: 0,
+    color: '#2c3e50',
+  },
+  scanHint: {
+    marginTop: '6px',
+    fontSize: '13px',
+    color: '#60727f',
+  },
+  scanControls: {
+    display: 'flex',
+    gap: '10px',
+    flexWrap: 'wrap',
+    minWidth: '320px',
+  },
+  scanMeta: {
+    marginTop: '10px',
+    fontSize: '12px',
+    color: '#60727f',
+  },
+  scanTableWrap: {
+    marginTop: '12px',
+    overflowX: 'auto',
+  },
   filterInput: {
     padding: '10px',
     border: '1px solid #bdc3c7',
@@ -804,6 +969,15 @@ const styles = {
     cursor: 'pointer',
     fontSize: '12px',
     marginLeft: '5px',
+  },
+  disabledButton: {
+    padding: '6px 12px',
+    backgroundColor: '#b9c3c9',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'not-allowed',
+    fontSize: '12px',
   },
 };
 

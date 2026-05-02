@@ -5,9 +5,10 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "migrate": "node scripts/migrate.js",
-    "dev": "nodemon server.js",
-    "start": "node server.js",
+    "prepare-db-host": "node scripts/resolveDbHost.js",
+    "migrate": "npm run prepare-db-host && node scripts/migrate.js",
+    "dev": "npm run prepare-db-host && nodemon server.js",
+    "start": "npm run prepare-db-host && node server.js",
     "test": "node --test"
   },
   "keywords": [],
