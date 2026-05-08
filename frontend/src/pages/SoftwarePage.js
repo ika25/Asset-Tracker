@@ -22,6 +22,15 @@ const EMPTY_SOFTWARE = {
   installation_date: '',
 };
 
+const parseDateSortValue = (value) => {
+  if (!value) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+};
+
 const SoftwarePage = () => {
   // Support deep links like /software?view=add.
   const [searchParams] = useSearchParams();
@@ -32,6 +41,9 @@ const SoftwarePage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [vendorFilter, setVendorFilter] = useState('All');
   const [licenseFilter, setLicenseFilter] = useState('All');
+  const [installedOnFilter, setInstalledOnFilter] = useState('All');
+  const [sortField, setSortField] = useState('name');
+  const [sortDirection, setSortDirection] = useState('asc');
   const {
     items: softwareList,
     loading,
@@ -123,9 +135,15 @@ const SoftwarePage = () => {
     setSearchTerm('');
     setVendorFilter('All');
     setLicenseFilter('All');
+    setInstalledOnFilter('All');
+    setSortField('name');
+    setSortDirection('asc');
   };
 
   const softwareVendors = [...new Set(softwareList.map((s) => s.vendor).filter(Boolean))];
+  const installedOnOptions = [...new Set(softwareList.map((s) => s.installed_on).filter(Boolean))].sort((left, right) => {
+    return String(left).localeCompare(String(right));
+  });
 
   const filteredSoftware = softwareList.filter((software) => {
     const query = searchTerm.toLowerCase();
@@ -136,7 +154,22 @@ const SoftwarePage = () => {
       (software.installed_on || '').toLowerCase().includes(query);
     const matchesVendor = vendorFilter === 'All' || software.vendor === vendorFilter;
     const matchesLicense = licenseFilter === 'All' || software.license_type === licenseFilter;
-    return matchesSearch && matchesVendor && matchesLicense;
+    const matchesInstalledOn = installedOnFilter === 'All' || software.installed_on === installedOnFilter;
+    return matchesSearch && matchesVendor && matchesLicense && matchesInstalledOn;
+  });
+
+  const sortedSoftware = [...filteredSoftware].sort((left, right) => {
+    const direction = sortDirection === 'asc' ? 1 : -1;
+
+    if (sortField === 'license_expiry' || sortField === 'installation_date') {
+      return (parseDateSortValue(left[sortField]) - parseDateSortValue(right[sortField])) * direction;
+    }
+
+    const leftValue = String(left[sortField] || '').toLowerCase();
+    const rightValue = String(right[sortField] || '').toLowerCase();
+    if (leftValue < rightValue) return -1 * direction;
+    if (leftValue > rightValue) return 1 * direction;
+    return 0;
   });
 
   return (
@@ -240,11 +273,42 @@ const SoftwarePage = () => {
                 <option value="Trial">Trial</option>
                 <option value="Pro">Pro</option>
               </select>
+              <select
+                value={installedOnFilter}
+                onChange={(e) => setInstalledOnFilter(e.target.value)}
+                style={styles.filterInput}
+              >
+                <option value="All">All Installed On</option>
+                {installedOnOptions.map((installedOn) => (
+                  <option key={installedOn} value={installedOn}>{installedOn}</option>
+                ))}
+              </select>
+              <select
+                value={sortField}
+                onChange={(e) => setSortField(e.target.value)}
+                style={styles.filterInput}
+              >
+                <option value="name">Sort: Name</option>
+                <option value="version">Sort: Version</option>
+                <option value="vendor">Sort: Vendor</option>
+                <option value="license_type">Sort: License Type</option>
+                <option value="license_expiry">Sort: License Expiry</option>
+                <option value="installed_on">Sort: Installed On</option>
+                <option value="installation_date">Sort: Installation Date</option>
+              </select>
+              <select
+                value={sortDirection}
+                onChange={(e) => setSortDirection(e.target.value)}
+                style={styles.filterInput}
+              >
+                <option value="asc">Ascending</option>
+                <option value="desc">Descending</option>
+              </select>
               <button onClick={handleClearFilters} style={styles.clearFilterButton}>
                 Clear Filters
               </button>
             </div>
-            {filteredSoftware.length === 0 ? (
+            {sortedSoftware.length === 0 ? (
               <p>{softwareList.length === 0 ? 'No software tracked. Start adding software to track licenses and installations.' : 'No software matches current filters.'}</p>
             ) : (
               <>
@@ -330,7 +394,7 @@ const SoftwarePage = () => {
                 </thead>
 
                 <tbody>
-                  {filteredSoftware.map((software) => (
+                  {sortedSoftware.map((software) => (
                     <tr key={software.id} style={styles.tableRow}>
                       <td style={styles.td}>{software.name}</td>
                       <td style={styles.td}>{software.version || '-'}</td>
@@ -473,7 +537,7 @@ const styles = {
   },
   filterBar: {
     display: 'grid',
-    gridTemplateColumns: '2fr 1fr 1fr auto',
+    gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr auto',
     gap: '10px',
     marginTop: '14px',
     marginBottom: '8px',

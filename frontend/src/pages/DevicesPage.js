@@ -56,6 +56,14 @@ const TYPE_ICON_MAP = {
 };
 
 const formatPortSummary = (host) => host.portSummary || '-';
+const extractSortableNumber = (value) => {
+  if (value === null || value === undefined) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  const match = String(value).match(/\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : Number.NEGATIVE_INFINITY;
+};
 
 const DevicesPage = () => {
   // Get URL query parameters
@@ -67,6 +75,9 @@ const DevicesPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [typeFilter, setTypeFilter] = useState('All');
+  const [ramFilter, setRamFilter] = useState('All');
+  const [sortField, setSortField] = useState('name');
+  const [sortDirection, setSortDirection] = useState('asc');
   const [scanTarget, setScanTarget] = useState(DEFAULT_SCAN_TARGET);
   const [scanDeepMode, setScanDeepMode] = useState(false);
   const [scanMode, setScanMode] = useState('quick');
@@ -215,6 +226,9 @@ const DevicesPage = () => {
     setSearchTerm('');
     setTypeFilter('All');
     setStatusFilter('All');
+    setRamFilter('All');
+    setSortField('name');
+    setSortDirection('asc');
   };
 
   const handleRunScan = async () => {
@@ -271,6 +285,9 @@ const DevicesPage = () => {
   };
 
   const deviceTypes = [...new Set([...DEVICE_TYPE_OPTIONS, ...devices.map((d) => d.type).filter(Boolean)])];
+  const ramOptions = [...new Set(devices.map((device) => device.ram).filter(Boolean))].sort((left, right) => {
+    return extractSortableNumber(left) - extractSortableNumber(right);
+  });
   const deviceStatuses = [
     ...DEVICE_STATUS_OPTIONS,
     ...devices
@@ -288,7 +305,29 @@ const DevicesPage = () => {
       (device.location || '').toLowerCase().includes(query);
     const matchesStatus = statusFilter === 'All' || device.status === statusFilter;
     const matchesType = typeFilter === 'All' || device.type === typeFilter;
-    return matchesSearch && matchesStatus && matchesType;
+    const matchesRam = ramFilter === 'All' || String(device.ram || '').trim() === ramFilter;
+    return matchesSearch && matchesStatus && matchesType && matchesRam;
+  });
+
+  const sortedDevices = [...filteredDevices].sort((left, right) => {
+    const direction = sortDirection === 'asc' ? 1 : -1;
+
+    if (sortField === 'ram' || sortField === 'disk_space' || sortField === 'device_age') {
+      return (extractSortableNumber(left[sortField]) - extractSortableNumber(right[sortField])) * direction;
+    }
+
+    if (sortField === 'install_date') {
+      const leftDate = left.install_date ? new Date(left.install_date).getTime() : Number.NEGATIVE_INFINITY;
+      const rightDate = right.install_date ? new Date(right.install_date).getTime() : Number.NEGATIVE_INFINITY;
+      return (leftDate - rightDate) * direction;
+    }
+
+    const leftValue = String(left[sortField] || '').toLowerCase();
+    const rightValue = String(right[sortField] || '').toLowerCase();
+
+    if (leftValue < rightValue) return -1 * direction;
+    if (leftValue > rightValue) return 1 * direction;
+    return 0;
   });
 
   const scannedDevices = scanResults.map((host) => ({
@@ -559,11 +598,45 @@ const DevicesPage = () => {
                   <option key={status} value={status}>{status}</option>
                 ))}
               </select>
+              <select
+                value={ramFilter}
+                onChange={(e) => setRamFilter(e.target.value)}
+                style={styles.filterInput}
+              >
+                <option value="All">All RAM</option>
+                {ramOptions.map((ram) => (
+                  <option key={ram} value={ram}>{ram}</option>
+                ))}
+              </select>
+              <select
+                value={sortField}
+                onChange={(e) => setSortField(e.target.value)}
+                style={styles.filterInput}
+              >
+                <option value="name">Sort: Name</option>
+                <option value="manufacturer">Sort: Maker</option>
+                <option value="ip_address">Sort: IP</option>
+                <option value="type">Sort: Type</option>
+                <option value="os">Sort: OS</option>
+                <option value="ram">Sort: RAM</option>
+                <option value="disk_space">Sort: Disk</option>
+                <option value="device_age">Sort: Age</option>
+                <option value="install_date">Sort: Install Date</option>
+                <option value="status">Sort: Status</option>
+              </select>
+              <select
+                value={sortDirection}
+                onChange={(e) => setSortDirection(e.target.value)}
+                style={styles.filterInput}
+              >
+                <option value="asc">Ascending</option>
+                <option value="desc">Descending</option>
+              </select>
               <button onClick={handleClearFilters} style={styles.clearFilterButton}>
                 Clear Filters
               </button>
             </div>
-            {filteredDevices.length === 0 ? (
+            {sortedDevices.length === 0 ? (
               <p>{devices.length === 0 ? 'No devices found.' : 'No machines match current filters.'}</p>
             ) : (
               <>
@@ -745,7 +818,7 @@ const DevicesPage = () => {
                 </thead>
 
                 <tbody>
-                  {filteredDevices.map((device) => (
+                  {sortedDevices.map((device) => (
                     <tr key={device.id} style={styles.tableRow}>
                       <td style={styles.td}>{device.icon || '💻'}</td>
                       <td style={styles.td}>{device.name}</td>
@@ -911,7 +984,7 @@ const styles = {
   },
   filterBar: {
     display: 'grid',
-    gridTemplateColumns: '2fr 1fr 1fr auto',
+    gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr auto',
     gap: '10px',
     marginTop: '14px',
     marginBottom: '8px',

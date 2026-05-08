@@ -24,6 +24,24 @@ const EMPTY_HARDWARE = {
   status: 'Active',
 };
 
+const parseDateSortValue = (value) => {
+  if (!value) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+};
+
+const parseNumericSortValue = (value) => {
+  if (value === null || value === undefined) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  const match = String(value).replace(/,/g, '').match(/\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : Number.NEGATIVE_INFINITY;
+};
+
 const HardwarePage = () => {
   // Support deep links like /hardware?view=add.
   const [searchParams] = useSearchParams();
@@ -34,6 +52,9 @@ const HardwarePage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [manufacturerFilter, setManufacturerFilter] = useState('All');
+  const [sortField, setSortField] = useState('name');
+  const [sortDirection, setSortDirection] = useState('asc');
   const {
     items: hardwareList,
     loading,
@@ -125,9 +146,15 @@ const HardwarePage = () => {
     setSearchTerm('');
     setTypeFilter('All');
     setStatusFilter('All');
+    setManufacturerFilter('All');
+    setSortField('name');
+    setSortDirection('asc');
   };
 
   const hardwareTypes = [...new Set(hardwareList.map((h) => h.type).filter(Boolean))];
+  const manufacturerOptions = [...new Set(hardwareList.map((h) => h.manufacturer).filter(Boolean))].sort((left, right) => {
+    return String(left).localeCompare(String(right));
+  });
 
   const filteredHardware = hardwareList.filter((hardware) => {
     const query = searchTerm.toLowerCase();
@@ -139,7 +166,26 @@ const HardwarePage = () => {
       (hardware.location || '').toLowerCase().includes(query);
     const matchesType = typeFilter === 'All' || hardware.type === typeFilter;
     const matchesStatus = statusFilter === 'All' || hardware.status === statusFilter;
-    return matchesSearch && matchesType && matchesStatus;
+    const matchesManufacturer = manufacturerFilter === 'All' || hardware.manufacturer === manufacturerFilter;
+    return matchesSearch && matchesType && matchesStatus && matchesManufacturer;
+  });
+
+  const sortedHardware = [...filteredHardware].sort((left, right) => {
+    const direction = sortDirection === 'asc' ? 1 : -1;
+
+    if (sortField === 'purchase_date' || sortField === 'warranty_expiry') {
+      return (parseDateSortValue(left[sortField]) - parseDateSortValue(right[sortField])) * direction;
+    }
+
+    if (sortField === 'cost') {
+      return (parseNumericSortValue(left.cost) - parseNumericSortValue(right.cost)) * direction;
+    }
+
+    const leftValue = String(left[sortField] || '').toLowerCase();
+    const rightValue = String(right[sortField] || '').toLowerCase();
+    if (leftValue < rightValue) return -1 * direction;
+    if (leftValue > rightValue) return 1 * direction;
+    return 0;
   });
 
   return (
@@ -261,11 +307,44 @@ const HardwarePage = () => {
                 <option value="Retired">Retired</option>
                 <option value="For Sale">For Sale</option>
               </select>
+              <select
+                value={manufacturerFilter}
+                onChange={(e) => setManufacturerFilter(e.target.value)}
+                style={styles.filterInput}
+              >
+                <option value="All">All Manufacturers</option>
+                {manufacturerOptions.map((manufacturer) => (
+                  <option key={manufacturer} value={manufacturer}>{manufacturer}</option>
+                ))}
+              </select>
+              <select
+                value={sortField}
+                onChange={(e) => setSortField(e.target.value)}
+                style={styles.filterInput}
+              >
+                <option value="name">Sort: Name</option>
+                <option value="type">Sort: Type</option>
+                <option value="model">Sort: Model</option>
+                <option value="manufacturer">Sort: Manufacturer</option>
+                <option value="purchase_date">Sort: Purchase Date</option>
+                <option value="cost">Sort: Cost</option>
+                <option value="location">Sort: Location</option>
+                <option value="warranty_expiry">Sort: Warranty Expiry</option>
+                <option value="status">Sort: Status</option>
+              </select>
+              <select
+                value={sortDirection}
+                onChange={(e) => setSortDirection(e.target.value)}
+                style={styles.filterInput}
+              >
+                <option value="asc">Ascending</option>
+                <option value="desc">Descending</option>
+              </select>
               <button onClick={handleClearFilters} style={styles.clearFilterButton}>
                 Clear Filters
               </button>
             </div>
-            {filteredHardware.length === 0 ? (
+            {sortedHardware.length === 0 ? (
               <p>{hardwareList.length === 0 ? 'No hardware tracked. Start adding hardware items to track inventory and warranties.' : 'No hardware matches current filters.'}</p>
             ) : (
               <>
@@ -371,7 +450,7 @@ const HardwarePage = () => {
                   </thead>
 
                   <tbody>
-                    {filteredHardware.map((hardware) => (
+                    {sortedHardware.map((hardware) => (
                       <tr key={hardware.id} style={styles.tableRow}>
                         <td style={styles.td}>{hardware.name}</td>
                         <td style={styles.td}>{hardware.type || '-'}</td>
@@ -539,7 +618,7 @@ const styles = {
   },
   filterBar: {
     display: 'grid',
-    gridTemplateColumns: '2fr 1fr 1fr auto',
+    gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr auto',
     gap: '10px',
     marginTop: '14px',
     marginBottom: '8px',
