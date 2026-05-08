@@ -20,6 +20,11 @@ import {
 import DevicePanel from '../components/DevicePanel';
 
 const ICON_OPTIONS = ['💻', '🖥️', '🖨️', '🛜', '📡', '🗄️', '📱', '📷'];
+const FLOOR_IMAGE_STORAGE_KEY = 'asset-tracker.floor-map-image';
+const FLOOR_LAYOUTS_STORAGE_KEY = 'asset-tracker.floor-map-layouts';
+const ACTIVE_LAYOUT_STORAGE_KEY = 'asset-tracker.floor-map-active-layout';
+const DEFAULT_FLOOR_IMAGE_PATH = '/floor.png';
+const DEFAULT_LAYOUT_ID = 'default-layout';
 const EMPTY_DEVICE = {
   name: '',
   manufacturer: '',
@@ -78,6 +83,11 @@ const FloorPage = () => {
   const stageRef = useRef(null);
   const mapViewportRef = useRef(null);
   const hasAutoFittedRef = useRef(false);
+  const floorImageInputRef = useRef(null);
+  const [layoutOptions, setLayoutOptions] = useState([
+    { id: DEFAULT_LAYOUT_ID, name: 'Default Layout', src: DEFAULT_FLOOR_IMAGE_PATH },
+  ]);
+  const [activeLayoutId, setActiveLayoutId] = useState(DEFAULT_LAYOUT_ID);
   const {
     items: devices,
     setItems: setDevices,
@@ -192,13 +202,16 @@ const FloorPage = () => {
     });
   }, [viewportSize.width, viewportSize.height, contentBounds.width, contentBounds.height, contentBounds.x, contentBounds.y]);
 
-  // =========================
-  // LOAD FLOOR IMAGE
-  // =========================
-  useEffect(() => {
+  const persistLayouts = useCallback((layouts, activeId) => {
+    const customLayouts = layouts.filter((layout) => layout.id !== DEFAULT_LAYOUT_ID);
+    window.localStorage.setItem(FLOOR_LAYOUTS_STORAGE_KEY, JSON.stringify(customLayouts));
+    window.localStorage.setItem(ACTIVE_LAYOUT_STORAGE_KEY, activeId);
+  }, []);
+
+  const applyFloorImage = useCallback((src) => {
     const img = new window.Image();
     img.decoding = 'async';
-    img.src = '/floor.png'; // must be in public/
+    img.src = src;
     img.onload = () => {
       setFloorImage(img);
       setMapSize({
@@ -206,8 +219,55 @@ const FloorPage = () => {
         height: img.naturalHeight || img.height || BASE_MAP_HEIGHT,
       });
       setContentBounds(detectContentBounds(img));
+      hasAutoFittedRef.current = false;
+      setError('');
     };
-  }, []);
+    img.onerror = () => {
+      setError('Could not load floor image. Please choose a valid image file.');
+    };
+  }, [setError]);
+
+  // =========================
+  // LOAD FLOOR IMAGE
+  // =========================
+  useEffect(() => {
+    const defaultLayout = {
+      id: DEFAULT_LAYOUT_ID,
+      name: 'Default Layout',
+      src: DEFAULT_FLOOR_IMAGE_PATH,
+    };
+
+    let customLayouts = [];
+
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(FLOOR_LAYOUTS_STORAGE_KEY) || '[]');
+      customLayouts = Array.isArray(parsed)
+        ? parsed.filter((layout) => layout && layout.id && layout.name && layout.src)
+        : [];
+    } catch {
+      customLayouts = [];
+    }
+
+    // Migrate legacy single-layout storage to multi-layout list.
+    const legacySrc = window.localStorage.getItem(FLOOR_IMAGE_STORAGE_KEY);
+    if (legacySrc && !customLayouts.some((layout) => layout.src === legacySrc)) {
+      customLayouts.unshift({
+        id: `layout-${Date.now()}`,
+        name: 'Uploaded Layout',
+        src: legacySrc,
+      });
+      window.localStorage.removeItem(FLOOR_IMAGE_STORAGE_KEY);
+    }
+
+    const nextLayouts = [defaultLayout, ...customLayouts];
+    const preferredActiveId = window.localStorage.getItem(ACTIVE_LAYOUT_STORAGE_KEY) || defaultLayout.id;
+    const activeLayout = nextLayouts.find((layout) => layout.id === preferredActiveId) || defaultLayout;
+
+    setLayoutOptions(nextLayouts);
+    setActiveLayoutId(activeLayout.id);
+    applyFloorImage(activeLayout.src);
+    persistLayouts(nextLayouts, activeLayout.id);
+  }, [applyFloorImage, persistLayouts]);
 
   useEffect(() => {
     const el = mapViewportRef.current;
@@ -343,6 +403,97 @@ const FloorPage = () => {
     if (created) {
       handleCloseAddDevice();
     }
+  };
+
+  const handleSelectFloorImage = () => {
+    floorImageInputRef.current?.click();
+  };
+
+  const handleFloorImageUpload = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please choose an image file (PNG/JPG/WebP).');
+      return;
+    }
+
+    const reader = new window.FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      if (!dataUrl) {
+        setError('Unable to read the selected image.');
+        return;
+      }
+
+      const suggestedName = file.name.replace(/\.[^/.]+$/, '') || 'Custom Layout';
+      const enteredName = window.prompt('Name this layout:', suggestedName);
+      if (enteredName === null) {
+        return;
+      }
+
+      const layoutName = enteredName.trim() || suggestedName;
+      const nextLayout = {
+        id: `layout-${Date.now()}`,
+        name: layoutName,
+        src: dataUrl,
+      };
+
+      const nextLayouts = [...layoutOptions, nextLayout];
+      setLayoutOptions(nextLayouts);
+      setActiveLayoutId(nextLayout.id);
+      persistLayouts(nextLayouts, nextLayout.id);
+      applyFloorImage(dataUrl);
+    };
+    reader.onerror = () => {
+      setError('Unable to read the selected image.');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleResetFloorImage = () => {
+    setActiveLayoutId(DEFAULT_LAYOUT_ID);
+    persistLayouts(layoutOptions, DEFAULT_LAYOUT_ID);
+    applyFloorImage(DEFAULT_FLOOR_IMAGE_PATH);
+  };
+
+  const handleLayoutChange = (e) => {
+    const nextLayoutId = e.target.value;
+    const selectedLayout = layoutOptions.find((layout) => layout.id === nextLayoutId);
+    if (!selectedLayout) {
+      return;
+    }
+
+    setActiveLayoutId(nextLayoutId);
+    persistLayouts(layoutOptions, nextLayoutId);
+    applyFloorImage(selectedLayout.src);
+  };
+
+  const handleDeleteActiveLayout = () => {
+    if (activeLayoutId === DEFAULT_LAYOUT_ID) {
+      setError('Default layout cannot be deleted.');
+      return;
+    }
+
+    const selectedLayout = layoutOptions.find((layout) => layout.id === activeLayoutId);
+    if (!selectedLayout) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete layout "${selectedLayout.name}"?`);
+    if (!confirmed) {
+      return;
+    }
+
+    const nextLayouts = layoutOptions.filter((layout) => layout.id !== activeLayoutId);
+    setLayoutOptions(nextLayouts);
+    setActiveLayoutId(DEFAULT_LAYOUT_ID);
+    persistLayouts(nextLayouts, DEFAULT_LAYOUT_ID);
+    applyFloorImage(DEFAULT_FLOOR_IMAGE_PATH);
+    setError('');
   };
 
   // =========================
@@ -571,6 +722,13 @@ const FloorPage = () => {
       {/* TOOLBAR */}
       <div style={styles.toolbar}>
         {error && <div style={styles.errorBanner}>{error}</div>}
+        <input
+          ref={floorImageInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleFloorImageUpload}
+        />
         <div style={styles.toolbarGroup}>
           <button
             onClick={handleOpenAddDevice}
@@ -608,6 +766,46 @@ const FloorPage = () => {
             title="Fit map to screen"
           >
             Fit Map
+          </button>
+
+          <button
+            onClick={handleSelectFloorImage}
+            style={styles.toolButton}
+            title="Upload and replace the current floor layout image"
+          >
+            Update Layout
+          </button>
+
+          <select
+            value={activeLayoutId}
+            onChange={handleLayoutChange}
+            style={styles.filterSelect}
+            title="Select a saved floor layout"
+          >
+            {layoutOptions.map((layout) => (
+              <option key={layout.id} value={layout.id}>{layout.name}</option>
+            ))}
+          </select>
+
+          <button
+            onClick={handleResetFloorImage}
+            style={styles.secondaryToolButton}
+            title="Revert to default floor.png layout"
+          >
+            Use Default Layout
+          </button>
+
+          <button
+            onClick={handleDeleteActiveLayout}
+            style={{
+              ...styles.deleteToolButton,
+              opacity: activeLayoutId === DEFAULT_LAYOUT_ID ? 0.6 : 1,
+              cursor: activeLayoutId === DEFAULT_LAYOUT_ID ? 'not-allowed' : 'pointer',
+            }}
+            disabled={activeLayoutId === DEFAULT_LAYOUT_ID}
+            title={activeLayoutId === DEFAULT_LAYOUT_ID ? 'Default layout cannot be deleted' : 'Delete selected custom layout'}
+          >
+            Delete Layout
           </button>
         </div>
 
@@ -1140,6 +1338,25 @@ const styles = {
     fontSize: '13px',
     fontWeight: '600',
     transition: 'all 0.2s ease',
+  },
+  secondaryToolButton: {
+    padding: '8px 14px',
+    backgroundColor: '#ffffff',
+    color: '#34495e',
+    border: '1px solid #bdc3c7',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '600',
+  },
+  deleteToolButton: {
+    padding: '8px 14px',
+    backgroundColor: '#ffffff',
+    color: '#b23b3b',
+    border: '1px solid #efc2c2',
+    borderRadius: '4px',
+    fontSize: '13px',
+    fontWeight: '600',
   },
   cancelPlacementButton: {
     padding: '8px 14px',
