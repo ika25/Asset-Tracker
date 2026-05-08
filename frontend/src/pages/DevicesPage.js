@@ -42,6 +42,20 @@ const DEFAULT_MAP_CENTER = {
   x: 600,
   y: 350,
 };
+const TYPE_ICON_MAP = {
+  PC: '💻',
+  Laptop: '💻',
+  Printer: '🖨️',
+  Router: '🛜',
+  Switch: '📡',
+  Server: '🗄️',
+  Phone: '📱',
+  Camera: '📷',
+  Tablet: '📱',
+  Other: '📡',
+};
+
+const formatPortSummary = (host) => host.portSummary || '-';
 
 const DevicesPage = () => {
   // Get URL query parameters
@@ -54,6 +68,8 @@ const DevicesPage = () => {
   const [statusFilter, setStatusFilter] = useState('All');
   const [typeFilter, setTypeFilter] = useState('All');
   const [scanTarget, setScanTarget] = useState(DEFAULT_SCAN_TARGET);
+  const [scanDeepMode, setScanDeepMode] = useState(false);
+  const [scanMode, setScanMode] = useState('quick');
   const [scanLoading, setScanLoading] = useState(false);
   const [scanError, setScanError] = useState('');
   const [scanResults, setScanResults] = useState([]);
@@ -64,6 +80,7 @@ const DevicesPage = () => {
     loading,
     saving,
     error,
+    setError,
     createItem,
     updateItem,
     deleteItem,
@@ -109,8 +126,15 @@ const DevicesPage = () => {
   // Add new device
   // =========================
   const handleAddDevice = async () => {
+    const normalizedIp = String(newDevice.ip_address || '').trim().toLowerCase();
+    if (normalizedIp && existingIps.has(normalizedIp)) {
+      setError(`A device with IP address ${normalizedIp} already exists.`);
+      return;
+    }
+
     const payload = sanitizeDevicePayload({
       ...newDevice,
+      ip_address: normalizedIp,
       x_position: newDevice.includeOnMap ? 100 : null,
       y_position: newDevice.includeOnMap ? 100 : null,
     });
@@ -156,8 +180,19 @@ const DevicesPage = () => {
   // Save edited device
   // =========================
   const handleSaveEdit = async () => {
+    const normalizedIp = String(editingData.ip_address || '').trim().toLowerCase();
+    const duplicate = devices.some((device) => (
+      device.id !== editingId && String(device.ip_address || '').trim().toLowerCase() === normalizedIp
+    ));
+
+    if (normalizedIp && duplicate) {
+      setError(`A device with IP address ${normalizedIp} already exists.`);
+      return;
+    }
+
     const payload = sanitizeDevicePayload({
       ...editingData,
+      ip_address: normalizedIp,
       x_position: editingData.includeOnMap ? (editingData.x_position ?? 100) : null,
       y_position: editingData.includeOnMap ? (editingData.y_position ?? 100) : null,
     });
@@ -186,9 +221,10 @@ const DevicesPage = () => {
     try {
       setScanLoading(true);
       setScanError('');
-      const response = await runNetworkScan(scanTarget);
+      const response = await runNetworkScan(scanTarget, { deepScan: scanDeepMode });
       setScanResults(response?.data?.devices || []);
       setScanScannedAt(response?.data?.scannedAt || '');
+      setScanMode(response?.data?.mode || (scanDeepMode ? 'deep' : 'quick'));
     } catch (err) {
       setScanError(getApiErrorMessage(err, 'Network scan failed.'));
       setScanResults([]);
@@ -200,7 +236,7 @@ const DevicesPage = () => {
 
   const existingIps = new Set(
     devices
-      .map((device) => String(device.ip_address || '').trim())
+      .map((device) => String(device.ip_address || '').trim().toLowerCase())
       .filter(Boolean)
   );
 
@@ -213,11 +249,12 @@ const DevicesPage = () => {
 
     const payload = sanitizeDevicePayload({
       ...EMPTY_DEVICE,
-      name: host.hostname || `Discovered ${host.ipAddress}`,
+      name: host.hostname || `${host.deviceTypeGuess || 'Discovered'} ${host.ipAddress}`,
       manufacturer: host.vendor || '',
       ip_address: host.ipAddress,
-      type: 'Other',
-      icon: host.vendor ? '🛜' : '📡',
+      type: host.deviceTypeGuess || 'Other',
+      icon: TYPE_ICON_MAP[host.deviceTypeGuess] || (host.vendor ? '🛜' : '📡'),
+      os: host.osGuess || '',
       location: 'Auto-discovered',
       status: 'Active',
       // Put discovered devices in the floor map center so they are easy to find.
@@ -433,22 +470,37 @@ const DevicesPage = () => {
                     placeholder="Scan target (example: 192.168.1.0/24)"
                     style={styles.filterInput}
                   />
+                  <label style={styles.checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={scanDeepMode}
+                      onChange={(e) => setScanDeepMode(e.target.checked)}
+                      disabled={scanLoading}
+                    />
+                    Deep scan (slower, more details)
+                  </label>
                   <button onClick={handleRunScan} style={styles.submitButton} disabled={scanLoading || loading || saving}>
                     {scanLoading ? 'Scanning...' : 'Run Scan'}
                   </button>
                 </div>
               </div>
               {scanError && <div style={styles.errorBanner}>{scanError}</div>}
+              {!scanLoading && (
+                <div style={styles.scanMeta}>Mode: {scanMode === 'deep' ? 'Deep (detailed)' : 'Quick (fast)'}</div>
+              )}
               {scanScannedAt && <div style={styles.scanMeta}>Last scan: {new Date(scanScannedAt).toLocaleString()}</div>}
               {scannedDevices.length > 0 && (
                 <div style={styles.scanTableWrap}>
                   <table style={styles.table}>
                     <thead>
                       <tr style={styles.tableHeader}>
+                        <th style={styles.th}>Type Guess</th>
                         <th style={styles.th}>Hostname</th>
                         <th style={styles.th}>IP Address</th>
+                        <th style={styles.th}>OS Guess</th>
                         <th style={styles.th}>MAC Address</th>
                         <th style={styles.th}>Vendor</th>
+                        <th style={styles.th}>Open Services</th>
                         <th style={styles.th}>Inventory</th>
                         <th style={styles.th}>Action</th>
                       </tr>
@@ -456,10 +508,13 @@ const DevicesPage = () => {
                     <tbody>
                       {scannedDevices.map((host) => (
                         <tr key={host.ipAddress || host.hostname} style={styles.tableRow}>
+                          <td style={styles.td}>{host.deviceTypeGuess || '-'}</td>
                           <td style={styles.td}>{host.hostname || '-'}</td>
                           <td style={styles.td}>{host.ipAddress || '-'}</td>
+                          <td style={styles.td}>{host.osGuess || '-'}</td>
                           <td style={styles.td}>{host.macAddress || '-'}</td>
                           <td style={styles.td}>{host.vendor || '-'}</td>
+                          <td style={styles.td}>{formatPortSummary(host)}</td>
                           <td style={styles.td}>{host.alreadyTracked ? 'Already tracked' : 'Not tracked'}</td>
                           <td style={styles.td}>
                             <button

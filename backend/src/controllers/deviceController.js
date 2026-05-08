@@ -33,6 +33,30 @@ const DEVICE_SELECT = `
 
 // Form fields often arrive as '' or undefined. We store those as NULL in Postgres.
 const normalizeValue = (value) => (value === '' || value === undefined ? null : value);
+const normalizeIpAddress = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized || null;
+};
+
+const getDeviceByNormalizedIp = async (client, ipAddress, excludeId = null) => {
+  if (!ipAddress) {
+    return null;
+  }
+
+  const params = [ipAddress];
+  let query = `
+    ${DEVICE_SELECT}
+    WHERE LOWER(TRIM(COALESCE(d.ip_address, ''))) = $1
+  `;
+
+  if (excludeId !== null) {
+    params.push(Number(excludeId));
+    query += ' AND d.id <> $2';
+  }
+
+  const { rows } = await client.query(query, params);
+  return rows[0] || null;
+};
 
 const insertStatusHistory = async (client, { deviceId, previousStatus, newStatus, actorName, metadata }) => {
   await client.query(
@@ -84,13 +108,21 @@ export const createDevice = async (req, res, next) => {
     // If any step fails, rollback keeps data and audit trail consistent.
     await client.query('BEGIN');
 
+    const normalizedIp = normalizeIpAddress(ip_address);
+    const duplicate = await getDeviceByNormalizedIp(client, normalizedIp);
+    if (duplicate) {
+      await client.query('ROLLBACK');
+      next(new HttpError(409, `A device with IP address ${normalizedIp} already exists.`));
+      return;
+    }
+
     const deviceResult = await client.query(
       `INSERT INTO devices (name, ip_address, type, status, x_position, y_position, floor_id, icon)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id`,
       [
         normalizeValue(name),
-        normalizeValue(ip_address),
+        normalizedIp,
         normalizeValue(type),
         normalizeValue(status) || 'Active',
         normalizeValue(x_position),
@@ -200,6 +232,14 @@ export const updateDevice = async (req, res, next) => {
       location: Object.prototype.hasOwnProperty.call(req.body, 'location') ? normalizeValue(req.body.location) : existing.location,
     };
 
+    const normalizedNextIp = normalizeIpAddress(nextDevice.ip_address);
+    const duplicate = await getDeviceByNormalizedIp(client, normalizedNextIp, id);
+    if (duplicate) {
+      await client.query('ROLLBACK');
+      next(new HttpError(409, `A device with IP address ${normalizedNextIp} already exists.`));
+      return;
+    }
+
     await client.query(
       `UPDATE devices SET
         name = $1,
@@ -213,7 +253,7 @@ export const updateDevice = async (req, res, next) => {
        WHERE id = $9`,
       [
         nextDevice.name,
-        nextDevice.ip_address,
+        normalizedNextIp,
         nextDevice.type,
         nextDevice.status,
         nextDevice.x_position,
