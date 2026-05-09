@@ -12,6 +12,7 @@ import {
   importDevicesFromCSV,
   exportDevicesToCSV,
 } from '../api/deviceApi';
+import { pingDevice, pingAllDevices } from '../api/pingApi';
 import { runNetworkScan } from '../api/scanApi';
 import {
   DEVICE_STATUS_OPTIONS,
@@ -91,6 +92,12 @@ const DevicesPage = () => {
   const [scanImportingByIp, setScanImportingByIp] = useState({});
   const [selectedDeviceIds, setSelectedDeviceIds] = useState(new Set());
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+
+  // Health monitoring state: Map<deviceId, { alive, latency, checkedAt }>
+  const [healthMap, setHealthMap] = useState({});
+  const [pingLoading, setPingLoading] = useState(false);
+  const [pingingDeviceId, setPingingDeviceId] = useState(null);
+  const [pingError, setPingError] = useState('');
   const {
     items: devices,
     loading,
@@ -279,6 +286,44 @@ const DevicesPage = () => {
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to delete devices.'));
       setBulkDeleteLoading(false);
+    }
+  };
+
+  // =========================
+  // Health / Ping
+  // =========================
+  const handlePingAll = async () => {
+    try {
+      setPingLoading(true);
+      setPingError('');
+      const response = await pingAllDevices();
+      const results = response?.data?.results || [];
+      const newMap = {};
+      for (const r of results) {
+        newMap[r.deviceId] = { alive: r.alive, latency: r.latency, checkedAt: r.checkedAt };
+      }
+      setHealthMap(newMap);
+    } catch (err) {
+      setPingError(getApiErrorMessage(err, 'Ping failed. Make sure the backend is running.'));
+    } finally {
+      setPingLoading(false);
+    }
+  };
+
+  const handlePingOne = async (deviceId) => {
+    try {
+      setPingingDeviceId(deviceId);
+      setPingError('');
+      const response = await pingDevice(deviceId);
+      const r = response?.data;
+      setHealthMap((prev) => ({
+        ...prev,
+        [deviceId]: { alive: r.alive, latency: r.latency, checkedAt: r.checkedAt },
+      }));
+    } catch (err) {
+      setPingError(getApiErrorMessage(err, 'Ping failed.'));
+    } finally {
+      setPingingDeviceId(null);
     }
   };
 
@@ -888,7 +933,7 @@ const DevicesPage = () => {
                   </div>
                 )}
 
-                {/* CSV Import/Export Toolbar */}
+                {/* CSV Import/Export + Health Toolbar */}
                 <div style={styles.csvToolbar}>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                     <label style={styles.csvButtonLabel}>
@@ -902,8 +947,18 @@ const DevicesPage = () => {
                       <span style={styles.csvButton}>📥 Import CSV</span>
                     </label>
                     <button onClick={handleExportCSV} style={styles.csvButton}>
-                      📥 Export CSV
+                      📤 Export CSV
                     </button>
+                    <button
+                      onClick={handlePingAll}
+                      style={styles.pingAllButton}
+                      disabled={pingLoading}
+                    >
+                      {pingLoading ? '⏳ Pinging…' : '📡 Ping All'}
+                    </button>
+                    {pingError && (
+                      <span style={{ color: '#e74c3c', fontSize: '13px' }}>{pingError}</span>
+                    )}
                   </div>
                 </div>
 
@@ -947,6 +1002,7 @@ const DevicesPage = () => {
                     <th style={styles.th}>Maker / Brand</th>
                     <th style={styles.th}>User Name</th>
                     <th style={styles.th}>IP Address</th>
+                    <th style={styles.th}>Health</th>
                     <th style={styles.th}>Type</th>
                       <th style={styles.th}>OS</th>
                       <th style={styles.th}>RAM</th>
@@ -976,6 +1032,46 @@ const DevicesPage = () => {
                       <td style={styles.td}>{device.manufacturer || '-'}</td>
                       <td style={styles.td}>{device.user_name || '-'}</td>
                       <td style={styles.td}>{device.ip_address}</td>
+                      <td style={styles.td}>
+                        {(() => {
+                          const h = healthMap[device.id];
+                          if (!h) {
+                            return (
+                              <button
+                                onClick={() => handlePingOne(device.id)}
+                                style={styles.pingButton}
+                                disabled={pingingDeviceId === device.id || !device.ip_address}
+                                title={device.ip_address ? 'Ping this device' : 'No IP address assigned'}
+                              >
+                                {pingingDeviceId === device.id ? '⏳' : '📡'}
+                              </button>
+                            );
+                          }
+                          return (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span
+                                style={{
+                                  ...styles.healthBadge,
+                                  backgroundColor: h.alive ? '#27ae60' : '#e74c3c',
+                                }}
+                              >
+                                {h.alive ? '● Online' : '● Offline'}
+                              </span>
+                              {h.alive && h.latency !== null && (
+                                <span style={styles.latencyText}>{h.latency}ms</span>
+                              )}
+                              <button
+                                onClick={() => handlePingOne(device.id)}
+                                style={styles.pingButton}
+                                disabled={pingingDeviceId === device.id || !device.ip_address}
+                                title="Re-ping"
+                              >
+                                {pingingDeviceId === device.id ? '⏳' : '🔄'}
+                              </button>
+                            </div>
+                          );
+                        })()}
+                      </td>
                       <td style={styles.td}>{device.type}</td>
                       <td style={styles.td}>{device.os || '-'}</td>
                       <td style={styles.td}>{device.ram || '-'}</td>
@@ -1312,6 +1408,39 @@ const styles = {
     fontSize: '13px',
     fontWeight: '600',
     display: 'inline-block',
+  },
+  pingAllButton: {
+    padding: '8px 14px',
+    backgroundColor: '#8e44ad',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '600',
+  },
+  pingButton: {
+    padding: '3px 7px',
+    backgroundColor: 'transparent',
+    border: '1px solid #bdc3c7',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    lineHeight: 1,
+  },
+  healthBadge: {
+    display: 'inline-block',
+    padding: '2px 7px',
+    borderRadius: '10px',
+    color: 'white',
+    fontSize: '11px',
+    fontWeight: '600',
+    whiteSpace: 'nowrap',
+  },
+  latencyText: {
+    fontSize: '11px',
+    color: '#7f8c8d',
+    whiteSpace: 'nowrap',
   },
 };
 
