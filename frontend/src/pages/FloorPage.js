@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 // Konva canvas components
-import { Stage, Layer, Group, Image, Text, Line, Circle } from 'react-konva';
+import { Stage, Layer, Group, Image, Text, Line, Circle, Rect } from 'react-konva';
 
 // API functions
 import { createDevice, getDevices, updateDevice } from '../api/deviceApi';
@@ -23,6 +23,17 @@ const ICON_OPTIONS = ['💻', '🖥️', '🖨️', '🛜', '📡', '🗄️', '
 const FLOOR_IMAGE_STORAGE_KEY = 'asset-tracker.floor-map-image';
 const FLOOR_LAYOUTS_STORAGE_KEY = 'asset-tracker.floor-map-layouts';
 const ACTIVE_LAYOUT_STORAGE_KEY = 'asset-tracker.floor-map-active-layout';
+const FLOOR_ZONES_STORAGE_KEY = 'asset-tracker.floor-map-zones';
+
+const ZONE_COLORS = [
+  { fill: 'rgba(52,152,219,0.15)', stroke: '#3498db', label: 'Blue' },
+  { fill: 'rgba(46,204,113,0.15)', stroke: '#2ecc71', label: 'Green' },
+  { fill: 'rgba(155,89,182,0.15)', stroke: '#9b59b6', label: 'Purple' },
+  { fill: 'rgba(230,126,34,0.15)', stroke: '#e67e22', label: 'Orange' },
+  { fill: 'rgba(231,76,60,0.15)', stroke: '#e74c3c', label: 'Red' },
+  { fill: 'rgba(241,196,15,0.15)', stroke: '#f1c40f', label: 'Yellow' },
+  { fill: 'rgba(26,188,156,0.15)', stroke: '#1abc9c', label: 'Teal' },
+];
 const DEFAULT_FLOOR_IMAGE_PATH = '/floor.png';
 const DEFAULT_LAYOUT_ID = 'default-layout';
 const EMPTY_DEVICE = {
@@ -88,6 +99,14 @@ const FloorPage = () => {
     { id: DEFAULT_LAYOUT_ID, name: 'Default Layout', src: DEFAULT_FLOOR_IMAGE_PATH },
   ]);
   const [activeLayoutId, setActiveLayoutId] = useState(DEFAULT_LAYOUT_ID);
+
+  // Zones: { [layoutId]: Zone[] }  where Zone = { id, label, x, y, w, h, colorIndex }
+  const [zonesByLayout, setZonesByLayout] = useState({});
+  const [isDrawingZone, setIsDrawingZone] = useState(false);
+  const [zoneDrawStart, setZoneDrawStart] = useState(null);
+  const [zoneDrawCurrent, setZoneDrawCurrent] = useState(null);
+  const [showZonePanel, setShowZonePanel] = useState(false);
+  const [nextZoneColorIndex, setNextZoneColorIndex] = useState(0);
   const {
     items: devices,
     setItems: setDevices,
@@ -208,6 +227,23 @@ const FloorPage = () => {
     window.localStorage.setItem(ACTIVE_LAYOUT_STORAGE_KEY, activeId);
   }, []);
 
+  const persistZones = useCallback((zonesMap) => {
+    window.localStorage.setItem(FLOOR_ZONES_STORAGE_KEY, JSON.stringify(zonesMap));
+  }, []);
+
+  // Zones for the currently active layout
+  const activeZones = zonesByLayout[activeLayoutId] || [];
+
+  const updateActiveZones = useCallback((updater) => {
+    setZonesByLayout((prev) => {
+      const current = prev[activeLayoutId] || [];
+      const next = typeof updater === 'function' ? updater(current) : updater;
+      const newMap = { ...prev, [activeLayoutId]: next };
+      persistZones(newMap);
+      return newMap;
+    });
+  }, [activeLayoutId, persistZones]);
+
   const applyFloorImage = useCallback((src) => {
     const img = new window.Image();
     img.decoding = 'async';
@@ -226,6 +262,20 @@ const FloorPage = () => {
       setError('Could not load floor image. Please choose a valid image file.');
     };
   }, [setError]);
+
+  // =========================
+  // LOAD ZONES FROM STORAGE
+  // =========================
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(FLOOR_ZONES_STORAGE_KEY) || '{}');
+      if (saved && typeof saved === 'object') {
+        setZonesByLayout(saved);
+      }
+    } catch {
+      // ignore corrupt data
+    }
+  }, []);
 
   // =========================
   // LOAD FLOOR IMAGE
@@ -472,6 +522,112 @@ const FloorPage = () => {
     applyFloorImage(selectedLayout.src);
   };
 
+  // =========================
+  // ZONE HANDLERS
+  // =========================
+  const handleAddZone = () => {
+    setIsDrawingZone(true);
+    setShowZonePanel(false);
+    setIsPlacingDevice(false);
+    setSelectedDevice(null);
+  };
+
+  const handleCancelZoneDraw = () => {
+    setIsDrawingZone(false);
+    setZoneDrawStart(null);
+    setZoneDrawCurrent(null);
+  };
+
+  const handleZoneMouseDown = (e) => {
+    if (!isDrawingZone) return;
+    const stage = e.target.getStage();
+    const pointer = stage?.getPointerPosition();
+    if (!pointer) return;
+    // Convert to logical map space
+    const mapX = (pointer.x - position.x) / zoom / mapScaleX;
+    const mapY = (pointer.y - position.y) / zoom / mapScaleY;
+    setZoneDrawStart({ x: mapX, y: mapY });
+    setZoneDrawCurrent({ x: mapX, y: mapY });
+  };
+
+  const handleZoneMouseMove = (e) => {
+    if (!isDrawingZone || !zoneDrawStart) return;
+    const stage = e.target.getStage();
+    const pointer = stage?.getPointerPosition();
+    if (!pointer) return;
+    const mapX = (pointer.x - position.x) / zoom / mapScaleX;
+    const mapY = (pointer.y - position.y) / zoom / mapScaleY;
+    setZoneDrawCurrent({ x: mapX, y: mapY });
+  };
+
+  const handleZoneMouseUp = () => {
+    if (!isDrawingZone || !zoneDrawStart || !zoneDrawCurrent) return;
+
+    const rx = Math.min(zoneDrawStart.x, zoneDrawCurrent.x);
+    const ry = Math.min(zoneDrawStart.y, zoneDrawCurrent.y);
+    const rw = Math.abs(zoneDrawCurrent.x - zoneDrawStart.x);
+    const rh = Math.abs(zoneDrawCurrent.y - zoneDrawStart.y);
+
+    // Ignore tiny accidental drags
+    if (rw < 10 || rh < 10) {
+      setZoneDrawStart(null);
+      setZoneDrawCurrent(null);
+      return;
+    }
+
+    const label = window.prompt('Zone label (e.g. "Server Room", "HR Dept"):', 'New Zone');
+    if (label === null) {
+      setZoneDrawStart(null);
+      setZoneDrawCurrent(null);
+      return;
+    }
+
+    const zone = {
+      id: `zone-${Date.now()}`,
+      label: label.trim() || 'Zone',
+      x: rx,
+      y: ry,
+      w: rw,
+      h: rh,
+      colorIndex: nextZoneColorIndex % ZONE_COLORS.length,
+    };
+
+    updateActiveZones((prev) => [...prev, zone]);
+    setNextZoneColorIndex((i) => i + 1);
+    setZoneDrawStart(null);
+    setZoneDrawCurrent(null);
+    setIsDrawingZone(false);
+    setShowZonePanel(true);
+  };
+
+  const handleRenameZone = (zoneId) => {
+    const zone = activeZones.find((z) => z.id === zoneId);
+    if (!zone) return;
+    const newLabel = window.prompt('Rename zone:', zone.label);
+    if (newLabel === null) return;
+    updateActiveZones((prev) =>
+      prev.map((z) => z.id === zoneId ? { ...z, label: newLabel.trim() || z.label } : z)
+    );
+  };
+
+  const handleDeleteZone = (zoneId) => {
+    const zone = activeZones.find((z) => z.id === zoneId);
+    if (!zone) return;
+    const confirmed = window.confirm(`Delete zone "${zone.label}"?`);
+    if (!confirmed) return;
+    updateActiveZones((prev) => prev.filter((z) => z.id !== zoneId));
+  };
+
+  const handleCycleZoneColor = (zoneId) => {
+    updateActiveZones((prev) =>
+      prev.map((z) =>
+        z.id === zoneId
+          ? { ...z, colorIndex: ((z.colorIndex || 0) + 1) % ZONE_COLORS.length }
+          : z
+      )
+    );
+  };
+
   const handleDeleteActiveLayout = () => {
     if (activeLayoutId === DEFAULT_LAYOUT_ID) {
       setError('Default layout cannot be deleted.');
@@ -501,6 +657,7 @@ const FloorPage = () => {
   // =========================
   const handleStageClick = (e) => {
     if (e.target.draggable()) return;
+    if (isDrawingZone) return;
 
     if (isPlacingDevice) {
       const stage = e.target.getStage();
@@ -562,11 +719,20 @@ const FloorPage = () => {
     const pointer = stage?.getPointerPosition();
     if (!pointer) return;
 
+    if (isDrawingZone) {
+      handleZoneMouseDown(e);
+      return;
+    }
+
     setIsPanning(true);
     setPanStart(pointer);
   };
 
   const handleMouseMove = (e) => {
+    if (isDrawingZone && zoneDrawStart) {
+      handleZoneMouseMove(e);
+      return;
+    }
     if (!isPanning) return;
 
     const stage = e.target.getStage();
@@ -581,6 +747,10 @@ const FloorPage = () => {
   };
 
   const handleMouseUp = () => {
+    if (isDrawingZone && zoneDrawStart) {
+      handleZoneMouseUp();
+      return;
+    }
     setIsPanning(false);
   };
 
@@ -776,6 +946,35 @@ const FloorPage = () => {
             Update Layout
           </button>
 
+          <button
+            onClick={() => {
+              if (isDrawingZone) {
+                handleCancelZoneDraw();
+              } else {
+                handleAddZone();
+              }
+            }}
+            style={{
+              ...styles.toolButton,
+              backgroundColor: isDrawingZone ? '#e74c3c' : '#8e44ad',
+            }}
+            title={isDrawingZone ? 'Cancel zone drawing' : 'Draw a new zone on the map'}
+          >
+            {isDrawingZone ? 'Cancel Zone' : '⬜ Add Zone'}
+          </button>
+
+          <button
+            onClick={() => setShowZonePanel((v) => !v)}
+            style={{
+              ...styles.toolButton,
+              backgroundColor: showZonePanel ? '#6c3483' : '#9b59b6',
+              position: 'relative',
+            }}
+            title="Manage zones"
+          >
+            Zones{activeZones.length > 0 ? ` (${activeZones.length})` : ''}
+          </button>
+
           <select
             value={activeLayoutId}
             onChange={handleLayoutChange}
@@ -871,7 +1070,77 @@ const FloorPage = () => {
             Click on the map to choose where the new device should be placed.
           </div>
         )}
+
+        {isDrawingZone && (
+          <div style={{ ...styles.placementInfo, backgroundColor: '#f3e5f5', color: '#6c3483', borderColor: '#9b59b6' }}>
+            Click and drag on the map to draw a zone rectangle.
+          </div>
+        )}
       </div>
+
+      {/* ZONE PANEL */}
+      {showZonePanel && (
+        <div style={styles.zonePanel}>
+          <div style={styles.zonePanelHeader}>
+            <span style={{ fontWeight: 700, fontSize: '14px' }}>Zones — {activeZones.length} defined</span>
+            <button onClick={() => setShowZonePanel(false)} style={styles.zonePanelClose}>✕</button>
+          </div>
+          {activeZones.length === 0 && (
+            <div style={styles.zoneEmpty}>No zones yet. Click "⬜ Add Zone" to draw one on the map.</div>
+          )}
+          {activeZones.map((zone) => {
+            const color = ZONE_COLORS[zone.colorIndex % ZONE_COLORS.length];
+            return (
+              <div key={zone.id} style={styles.zoneRow}>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: 12,
+                    height: 12,
+                    borderRadius: 2,
+                    backgroundColor: color.stroke,
+                    marginRight: 8,
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ flex: 1, fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {zone.label}
+                </span>
+                <span style={{ fontSize: '11px', color: '#7f8c8d', marginRight: 8 }}>
+                  {Math.round(zone.w)}×{Math.round(zone.h)}
+                </span>
+                <button
+                  onClick={() => handleCycleZoneColor(zone.id)}
+                  style={styles.zoneAction}
+                  title="Change color"
+                >
+                  🎨
+                </button>
+                <button
+                  onClick={() => handleRenameZone(zone.id)}
+                  style={styles.zoneAction}
+                  title="Rename zone"
+                >
+                  ✏️
+                </button>
+                <button
+                  onClick={() => handleDeleteZone(zone.id)}
+                  style={{ ...styles.zoneAction, color: '#e74c3c' }}
+                  title="Delete zone"
+                >
+                  🗑
+                </button>
+              </div>
+            );
+          })}
+          <button
+            onClick={handleAddZone}
+            style={styles.zoneAddButton}
+          >
+            + Draw New Zone
+          </button>
+        </div>
+      )}
 
       {/* MAP AREA */}
       <div style={styles.mapAreaWrapper}>
@@ -888,7 +1157,7 @@ const FloorPage = () => {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
-            style={{ cursor: isPlacingDevice ? 'crosshair' : (isPanning ? 'grabbing' : 'grab') }}
+            style={{ cursor: isDrawingZone ? 'crosshair' : (isPlacingDevice ? 'crosshair' : (isPanning ? 'grabbing' : 'grab')) }}
           >
             <Layer>
               <Group x={position.x} y={position.y} scaleX={zoom} scaleY={zoom}>
@@ -907,6 +1176,57 @@ const FloorPage = () => {
                   imageSmoothingEnabled={true}
                 />
               )}
+
+              {/* Zones - rendered on top of floor image, below devices */}
+              {activeZones.map((zone) => {
+                const color = ZONE_COLORS[zone.colorIndex % ZONE_COLORS.length];
+                return (
+                  <Group key={zone.id}>
+                    <Rect
+                      x={zone.x * mapScaleX}
+                      y={zone.y * mapScaleY}
+                      width={zone.w * mapScaleX}
+                      height={zone.h * mapScaleY}
+                      fill={color.fill}
+                      stroke={color.stroke}
+                      strokeWidth={1.5}
+                      dash={[8, 4]}
+                      listening={false}
+                    />
+                    <Text
+                      x={zone.x * mapScaleX + 6}
+                      y={zone.y * mapScaleY + 4}
+                      text={zone.label}
+                      fontSize={13}
+                      fontStyle="bold"
+                      fill={color.stroke}
+                      listening={false}
+                    />
+                  </Group>
+                );
+              })}
+
+              {/* Zone being drawn (preview rect) */}
+              {isDrawingZone && zoneDrawStart && zoneDrawCurrent && (() => {
+                const rx = Math.min(zoneDrawStart.x, zoneDrawCurrent.x);
+                const ry = Math.min(zoneDrawStart.y, zoneDrawCurrent.y);
+                const rw = Math.abs(zoneDrawCurrent.x - zoneDrawStart.x);
+                const rh = Math.abs(zoneDrawCurrent.y - zoneDrawStart.y);
+                const color = ZONE_COLORS[nextZoneColorIndex % ZONE_COLORS.length];
+                return (
+                  <Rect
+                    x={rx * mapScaleX}
+                    y={ry * mapScaleY}
+                    width={rw * mapScaleX}
+                    height={rh * mapScaleY}
+                    fill={color.fill}
+                    stroke={color.stroke}
+                    strokeWidth={2}
+                    dash={[6, 3]}
+                    listening={false}
+                  />
+                );
+              })()}
 
               {/* Devices */}
               {filteredDevices.filter((device) => {
@@ -1624,7 +1944,65 @@ const styles = {
     fontWeight: '700',
     cursor: 'pointer',
   },
-
+  zonePanel: {
+    backgroundColor: '#fff',
+    borderBottom: '1px solid #e1d5f0',
+    padding: '12px 20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    maxHeight: '260px',
+    overflowY: 'auto',
+  },
+  zonePanelHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '4px',
+  },
+  zonePanelClose: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '16px',
+    color: '#7f8c8d',
+    padding: '2px 6px',
+  },
+  zoneEmpty: {
+    fontSize: '13px',
+    color: '#95a5a6',
+    fontStyle: 'italic',
+    padding: '4px 0',
+  },
+  zoneRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '6px 8px',
+    borderRadius: '6px',
+    backgroundColor: '#faf5ff',
+    border: '1px solid #e9d8fd',
+  },
+  zoneAction: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '14px',
+    padding: '2px 4px',
+    borderRadius: '3px',
+  },
+  zoneAddButton: {
+    marginTop: '4px',
+    padding: '8px 14px',
+    backgroundColor: '#8e44ad',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: 600,
+    alignSelf: 'flex-start',
+  },
 
 };
 
