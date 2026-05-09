@@ -8,6 +8,7 @@ import {
   createDevice,
   deleteDevice,
   updateDevice,
+  bulkDeleteDevices,
 } from '../api/deviceApi';
 import { runNetworkScan } from '../api/scanApi';
 import {
@@ -86,6 +87,8 @@ const DevicesPage = () => {
   const [scanResults, setScanResults] = useState([]);
   const [scanScannedAt, setScanScannedAt] = useState('');
   const [scanImportingByIp, setScanImportingByIp] = useState({});
+  const [selectedDeviceIds, setSelectedDeviceIds] = useState(new Set());
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
   const {
     items: devices,
     loading,
@@ -229,6 +232,52 @@ const DevicesPage = () => {
     setRamFilter('All');
     setSortField('name');
     setSortDirection('asc');
+  };
+
+  // =========================
+  // Bulk Delete Actions
+  // =========================
+  const handleSelectDevice = (deviceId) => {
+    const updated = new Set(selectedDeviceIds);
+    if (updated.has(deviceId)) {
+      updated.delete(deviceId);
+    } else {
+      updated.add(deviceId);
+    }
+    setSelectedDeviceIds(updated);
+  };
+
+  const handleSelectAllVisibleDevices = () => {
+    if (selectedDeviceIds.size === sortedDevices.length && sortedDevices.length > 0) {
+      setSelectedDeviceIds(new Set());
+    } else {
+      setSelectedDeviceIds(new Set(sortedDevices.map((d) => d.id)));
+    }
+  };
+
+  const handleClearBulkSelection = () => {
+    setSelectedDeviceIds(new Set());
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedDeviceIds.size === 0) {
+      setError('Please select at least one device.');
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete ${selectedDeviceIds.size} device(s)? This cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      setBulkDeleteLoading(true);
+      setError('');
+      await bulkDeleteDevices(Array.from(selectedDeviceIds));
+      // Refresh the page to update the device list
+      window.location.reload();
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to delete devices.'));
+      setBulkDeleteLoading(false);
+    }
   };
 
   const handleRunScan = async () => {
@@ -795,10 +844,41 @@ const DevicesPage = () => {
                   </div>
                 )}
 
+                {/* Bulk Delete Toolbar */}
+                {selectedDeviceIds.size > 0 && (
+                  <div style={styles.bulkActionToolbar}>
+                    <span style={styles.bulkActionCount}>
+                      {selectedDeviceIds.size} device{selectedDeviceIds.size !== 1 ? 's' : ''} selected
+                    </span>
+                    <button
+                      onClick={handleBulkDelete}
+                      style={styles.bulkDeleteButton}
+                      disabled={bulkDeleteLoading}
+                    >
+                      {bulkDeleteLoading ? 'Deleting...' : 'Delete Selected'}
+                    </button>
+                    <button
+                      onClick={handleClearBulkSelection}
+                      style={styles.bulkCancelButton}
+                      disabled={bulkDeleteLoading}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
                 {/* Devices Table */}
                 <table style={styles.table}>
                 <thead>
                   <tr style={styles.tableHeader}>
+                    <th style={styles.th}>
+                      <input
+                        type="checkbox"
+                        checked={selectedDeviceIds.size === sortedDevices.length && sortedDevices.length > 0}
+                        onChange={handleSelectAllVisibleDevices}
+                        style={{ cursor: 'pointer' }}
+                      />
+                    </th>
                     <th style={styles.th}>Icon</th>
                     <th style={styles.th}>Name</th>
                     <th style={styles.th}>Maker / Brand</th>
@@ -820,6 +900,14 @@ const DevicesPage = () => {
                 <tbody>
                   {sortedDevices.map((device) => (
                     <tr key={device.id} style={styles.tableRow}>
+                      <td style={styles.td}>
+                        <input
+                          type="checkbox"
+                          checked={selectedDeviceIds.has(device.id)}
+                          onChange={() => handleSelectDevice(device.id)}
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </td>
                       <td style={styles.td}>{device.icon || '💻'}</td>
                       <td style={styles.td}>{device.name}</td>
                       <td style={styles.td}>{device.manufacturer || '-'}</td>
@@ -1106,6 +1194,41 @@ const styles = {
     borderRadius: '4px',
     cursor: 'not-allowed',
     fontSize: '12px',
+  },
+  bulkActionToolbar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '15px',
+    padding: '12px 15px',
+    backgroundColor: '#fff3cd',
+    border: '1px solid #ffc107',
+    borderRadius: '6px',
+    marginBottom: '15px',
+  },
+  bulkActionCount: {
+    fontWeight: '600',
+    color: '#856404',
+    fontSize: '14px',
+  },
+  bulkDeleteButton: {
+    padding: '8px 16px',
+    backgroundColor: '#e74c3c',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '600',
+  },
+  bulkCancelButton: {
+    padding: '8px 16px',
+    backgroundColor: '#95a5a6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '600',
   },
 };
 

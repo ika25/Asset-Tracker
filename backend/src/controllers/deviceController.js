@@ -359,3 +359,56 @@ export const deleteDevice = async (req, res, next) => {
     client.release();
   }
 };
+
+export const bulkDeleteDevices = async (req, res, next) => {
+  const { ids } = req.body;
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const deviceIds = ids.map((id) => Number(id));
+
+    // Fetch existing devices for audit
+    const existingResult = await client.query(
+      `${DEVICE_SELECT} WHERE d.id = ANY($1::int[])`,
+      [deviceIds]
+    );
+    const existingDevices = existingResult.rows;
+
+    if (existingDevices.length === 0) {
+      await client.query('ROLLBACK');
+      next(new HttpError(404, 'No devices found with the provided IDs.'));
+      return;
+    }
+
+    // Delete devices
+    await client.query('DELETE FROM devices WHERE id = ANY($1::int[])', [deviceIds]);
+
+    // Audit each deletion
+    const metadata = buildMetadata(req);
+    const actorName = actorNameFromRequest(req);
+
+    for (const device of existingDevices) {
+      await insertAuditLog(client, {
+        entityType: 'device',
+        entityId: Number(device.id),
+        action: 'deleted',
+        actorName,
+        changes: { before: device },
+        metadata,
+      });
+    }
+
+    await client.query('COMMIT');
+    res.json({
+      message: `Successfully deleted ${existingDevices.length} device(s).`,
+      count: existingDevices.length,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+};

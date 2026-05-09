@@ -5,6 +5,7 @@ import {
   deleteSoftware,
   getSoftware,
   updateSoftware,
+  bulkDeleteSoftware,
 } from '../api/softwareApi';
 import { useCrudResource } from '../hooks/useCrudResource';
 import { sanitizeSoftwarePayload } from '../utils/inventoryPayloadConfig';
@@ -44,6 +45,8 @@ const SoftwarePage = () => {
   const [installedOnFilter, setInstalledOnFilter] = useState('All');
   const [sortField, setSortField] = useState('name');
   const [sortDirection, setSortDirection] = useState('asc');
+  const [selectedSoftwareIds, setSelectedSoftwareIds] = useState(new Set());
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
   const {
     items: softwareList,
     loading,
@@ -138,6 +141,50 @@ const SoftwarePage = () => {
     setInstalledOnFilter('All');
     setSortField('name');
     setSortDirection('asc');
+  };
+
+  // =========================
+  // Bulk Delete Actions
+  // =========================
+  const handleSelectSoftware = (softwareId) => {
+    const updated = new Set(selectedSoftwareIds);
+    if (updated.has(softwareId)) {
+      updated.delete(softwareId);
+    } else {
+      updated.add(softwareId);
+    }
+    setSelectedSoftwareIds(updated);
+  };
+
+  const handleSelectAllVisibleSoftware = () => {
+    if (selectedSoftwareIds.size === sortedSoftware.length && sortedSoftware.length > 0) {
+      setSelectedSoftwareIds(new Set());
+    } else {
+      setSelectedSoftwareIds(new Set(sortedSoftware.map((s) => s.id)));
+    }
+  };
+
+  const handleClearBulkSelection = () => {
+    setSelectedSoftwareIds(new Set());
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedSoftwareIds.size === 0) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete ${selectedSoftwareIds.size} software item(s)? This cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      setBulkDeleteLoading(true);
+      await bulkDeleteSoftware(Array.from(selectedSoftwareIds));
+      // Refresh the page to update the list
+      window.location.reload();
+    } catch (err) {
+      console.error('Bulk delete failed:', err);
+      setBulkDeleteLoading(false);
+    }
   };
 
   const softwareVendors = [...new Set(softwareList.map((s) => s.vendor).filter(Boolean))];
@@ -378,10 +425,41 @@ const SoftwarePage = () => {
                   </div>
                 )}
 
+                {/* Bulk Delete Toolbar */}
+                {selectedSoftwareIds.size > 0 && (
+                  <div style={styles.bulkActionToolbar}>
+                    <span style={styles.bulkActionCount}>
+                      {selectedSoftwareIds.size} item{selectedSoftwareIds.size !== 1 ? 's' : ''} selected
+                    </span>
+                    <button
+                      onClick={handleBulkDelete}
+                      style={styles.bulkDeleteButton}
+                      disabled={bulkDeleteLoading}
+                    >
+                      {bulkDeleteLoading ? 'Deleting...' : 'Delete Selected'}
+                    </button>
+                    <button
+                      onClick={handleClearBulkSelection}
+                      style={styles.bulkCancelButton}
+                      disabled={bulkDeleteLoading}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
                 {/* Software Table */}
                 <table style={styles.table}>
                 <thead>
                   <tr style={styles.tableHeader}>
+                    <th style={styles.th}>
+                      <input
+                        type="checkbox"
+                        checked={selectedSoftwareIds.size === sortedSoftware.length && sortedSoftware.length > 0}
+                        onChange={handleSelectAllVisibleSoftware}
+                        style={{ cursor: 'pointer' }}
+                      />
+                    </th>
                     <th style={styles.th}>Software Name</th>
                     <th style={styles.th}>Version</th>
                     <th style={styles.th}>Vendor</th>
@@ -396,6 +474,14 @@ const SoftwarePage = () => {
                 <tbody>
                   {sortedSoftware.map((software) => (
                     <tr key={software.id} style={styles.tableRow}>
+                      <td style={styles.td}>
+                        <input
+                          type="checkbox"
+                          checked={selectedSoftwareIds.has(software.id)}
+                          onChange={() => handleSelectSoftware(software.id)}
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </td>
                       <td style={styles.td}>{software.name}</td>
                       <td style={styles.td}>{software.version || '-'}</td>
                       <td style={styles.td}>{software.vendor || '-'}</td>
@@ -604,6 +690,41 @@ const styles = {
     cursor: 'pointer',
     fontSize: '12px',
     marginLeft: '5px',
+  },
+  bulkActionToolbar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '15px',
+    padding: '12px 15px',
+    backgroundColor: '#fff3cd',
+    border: '1px solid #ffc107',
+    borderRadius: '6px',
+    marginBottom: '15px',
+  },
+  bulkActionCount: {
+    fontWeight: '600',
+    color: '#856404',
+    fontSize: '14px',
+  },
+  bulkDeleteButton: {
+    padding: '8px 16px',
+    backgroundColor: '#e74c3c',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '600',
+  },
+  bulkCancelButton: {
+    padding: '8px 16px',
+    backgroundColor: '#95a5a6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '600',
   },
 };
 

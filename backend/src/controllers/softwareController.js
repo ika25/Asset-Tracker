@@ -131,3 +131,56 @@ export const deleteSoftware = async (req, res, next) => {
     client.release();
   }
 };
+
+export const bulkDeleteSoftware = async (req, res, next) => {
+  const { ids } = req.body;
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const softwareIds = ids.map((id) => Number(id));
+
+    // Fetch existing software for audit
+    const existingResult = await client.query(
+      'SELECT * FROM software WHERE id = ANY($1::int[])',
+      [softwareIds]
+    );
+    const existingSoftware = existingResult.rows;
+
+    if (existingSoftware.length === 0) {
+      await client.query('ROLLBACK');
+      next(new HttpError(404, 'No software found with the provided IDs.'));
+      return;
+    }
+
+    // Delete software
+    await client.query('DELETE FROM software WHERE id = ANY($1::int[])', [softwareIds]);
+
+    // Audit each deletion
+    const metadata = buildMetadata(req);
+    const actorName = actorNameFromRequest(req);
+
+    for (const software of existingSoftware) {
+      await insertAuditLog(client, {
+        entityType: 'software',
+        entityId: Number(software.id),
+        action: 'deleted',
+        actorName,
+        changes: { before: software },
+        metadata,
+      });
+    }
+
+    await client.query('COMMIT');
+    res.json({
+      message: `Successfully deleted ${existingSoftware.length} software item(s).`,
+      count: existingSoftware.length,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+};

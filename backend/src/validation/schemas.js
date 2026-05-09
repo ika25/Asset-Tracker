@@ -70,5 +70,9 @@ export const assignSoftwareSchema = z.object({
   software_id: z.coerce.number().int().positive(),
 }).strict();
 
+export const bulkDeleteSchema = z.object({
+  ids: z.array(z.coerce.number().int().positive()).min(1, 'At least one ID is required.'),
+}).strict();
+
 export const idParamSchema = idParam;
 export const deviceIdParamSchema = deviceIdParam;

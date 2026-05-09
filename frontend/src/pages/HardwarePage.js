@@ -5,6 +5,7 @@ import {
   deleteHardware,
   getHardware,
   updateHardware,
+  bulkDeleteHardware,
 } from '../api/hardwareApi';
 import { useCrudResource } from '../hooks/useCrudResource';
 import { sanitizeHardwarePayload } from '../utils/inventoryPayloadConfig';
@@ -55,6 +56,8 @@ const HardwarePage = () => {
   const [manufacturerFilter, setManufacturerFilter] = useState('All');
   const [sortField, setSortField] = useState('name');
   const [sortDirection, setSortDirection] = useState('asc');
+  const [selectedHardwareIds, setSelectedHardwareIds] = useState(new Set());
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
   const {
     items: hardwareList,
     loading,
@@ -149,6 +152,50 @@ const HardwarePage = () => {
     setManufacturerFilter('All');
     setSortField('name');
     setSortDirection('asc');
+  };
+
+  // =========================
+  // Bulk Delete Actions
+  // =========================
+  const handleSelectHardware = (hardwareId) => {
+    const updated = new Set(selectedHardwareIds);
+    if (updated.has(hardwareId)) {
+      updated.delete(hardwareId);
+    } else {
+      updated.add(hardwareId);
+    }
+    setSelectedHardwareIds(updated);
+  };
+
+  const handleSelectAllVisibleHardware = () => {
+    if (selectedHardwareIds.size === sortedHardware.length && sortedHardware.length > 0) {
+      setSelectedHardwareIds(new Set());
+    } else {
+      setSelectedHardwareIds(new Set(sortedHardware.map((h) => h.id)));
+    }
+  };
+
+  const handleClearBulkSelection = () => {
+    setSelectedHardwareIds(new Set());
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedHardwareIds.size === 0) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete ${selectedHardwareIds.size} hardware item(s)? This cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      setBulkDeleteLoading(true);
+      await bulkDeleteHardware(Array.from(selectedHardwareIds));
+      // Refresh the page to update the list
+      window.location.reload();
+    } catch (err) {
+      console.error('Bulk delete failed:', err);
+      setBulkDeleteLoading(false);
+    }
   };
 
   const hardwareTypes = [...new Set(hardwareList.map((h) => h.type).filter(Boolean))];
@@ -432,10 +479,41 @@ const HardwarePage = () => {
                   </div>
                 )}
 
+                {/* Bulk Delete Toolbar */}
+                {selectedHardwareIds.size > 0 && (
+                  <div style={styles.bulkActionToolbar}>
+                    <span style={styles.bulkActionCount}>
+                      {selectedHardwareIds.size} item{selectedHardwareIds.size !== 1 ? 's' : ''} selected
+                    </span>
+                    <button
+                      onClick={handleBulkDelete}
+                      style={styles.bulkDeleteButton}
+                      disabled={bulkDeleteLoading}
+                    >
+                      {bulkDeleteLoading ? 'Deleting...' : 'Delete Selected'}
+                    </button>
+                    <button
+                      onClick={handleClearBulkSelection}
+                      style={styles.bulkCancelButton}
+                      disabled={bulkDeleteLoading}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
                 {/* Hardware Table */}
                 <table style={styles.table}>
                   <thead>
                     <tr style={styles.tableHeader}>
+                      <th style={styles.th}>
+                        <input
+                          type="checkbox"
+                          checked={selectedHardwareIds.size === sortedHardware.length && sortedHardware.length > 0}
+                          onChange={handleSelectAllVisibleHardware}
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </th>
                       <th style={styles.th}>Hardware Name</th>
                       <th style={styles.th}>Type</th>
                       <th style={styles.th}>Model</th>
@@ -452,6 +530,14 @@ const HardwarePage = () => {
                   <tbody>
                     {sortedHardware.map((hardware) => (
                       <tr key={hardware.id} style={styles.tableRow}>
+                        <td style={styles.td}>
+                          <input
+                            type="checkbox"
+                            checked={selectedHardwareIds.has(hardware.id)}
+                            onChange={() => handleSelectHardware(hardware.id)}
+                            style={{ cursor: 'pointer' }}
+                          />
+                        </td>
                         <td style={styles.td}>{hardware.name}</td>
                         <td style={styles.td}>{hardware.type || '-'}</td>
                         <td style={styles.td}>{hardware.model || '-'}</td>
@@ -687,6 +773,41 @@ const styles = {
     display: 'flex',
     gap: '8px',
     alignItems: 'center',
+  },
+  bulkActionToolbar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '15px',
+    padding: '12px 15px',
+    backgroundColor: '#fff3cd',
+    border: '1px solid #ffc107',
+    borderRadius: '6px',
+    marginBottom: '15px',
+  },
+  bulkActionCount: {
+    fontWeight: '600',
+    color: '#856404',
+    fontSize: '14px',
+  },
+  bulkDeleteButton: {
+    padding: '8px 16px',
+    backgroundColor: '#e74c3c',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '600',
+  },
+  bulkCancelButton: {
+    padding: '8px 16px',
+    backgroundColor: '#95a5a6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '600',
   },
 };
 

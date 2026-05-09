@@ -139,3 +139,56 @@ export const deleteHardware = async (req, res, next) => {
     client.release();
   }
 };
+
+export const bulkDeleteHardware = async (req, res, next) => {
+  const { ids } = req.body;
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const hardwareIds = ids.map((id) => Number(id));
+
+    // Fetch existing hardware for audit
+    const existingResult = await client.query(
+      'SELECT * FROM hardware WHERE id = ANY($1::int[])',
+      [hardwareIds]
+    );
+    const existingHardware = existingResult.rows;
+
+    if (existingHardware.length === 0) {
+      await client.query('ROLLBACK');
+      next(new HttpError(404, 'No hardware found with the provided IDs.'));
+      return;
+    }
+
+    // Delete hardware
+    await client.query('DELETE FROM hardware WHERE id = ANY($1::int[])', [hardwareIds]);
+
+    // Audit each deletion
+    const metadata = buildMetadata(req);
+    const actorName = actorNameFromRequest(req);
+
+    for (const hardware of existingHardware) {
+      await insertAuditLog(client, {
+        entityType: 'hardware',
+        entityId: Number(hardware.id),
+        action: 'deleted',
+        actorName,
+        changes: { before: hardware },
+        metadata,
+      });
+    }
+
+    await client.query('COMMIT');
+    res.json({
+      message: `Successfully deleted ${existingHardware.length} hardware item(s).`,
+      count: existingHardware.length,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+};

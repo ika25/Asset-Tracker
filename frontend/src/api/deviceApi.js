@@ -27,3 +27,10 @@ export const updateDevice = (id, data) => {
 export const deleteDevice = (id) => {
   return apiClient.delete(`/devices/${id}`); // delete device
 };
+
+// =========================
+// BULK DELETE devices
+// =========================
+export const bulkDeleteDevices = (ids) => {
+  return apiClient.post('/devices/bulk-delete', { ids });
+};

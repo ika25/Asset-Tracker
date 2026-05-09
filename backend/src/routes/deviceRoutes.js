@@ -3,15 +3,17 @@ import {
   getDevices,
   createDevice,
   updateDevice,
-  deleteDevice
+  deleteDevice,
+  bulkDeleteDevices,
 } from '../controllers/deviceController.js';
 import { validateBody, validateParams } from '../middleware/validate.js';
-import { deviceCreateSchema, deviceUpdateSchema, idParamSchema } from '../validation/schemas.js';
+import { deviceCreateSchema, deviceUpdateSchema, idParamSchema, bulkDeleteSchema } from '../validation/schemas.js';
 
 const router = express.Router();
 
 router.get('/', getDevices);
 router.post('/', validateBody(deviceCreateSchema), createDevice);
+router.post('/bulk-delete', validateBody(bulkDeleteSchema), bulkDeleteDevices);
 router.put('/:id', validateParams(idParamSchema), validateBody(deviceUpdateSchema), updateDevice);
 router.delete('/:id', validateParams(idParamSchema), deleteDevice);
 
