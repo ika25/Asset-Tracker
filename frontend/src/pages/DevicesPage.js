@@ -9,6 +9,8 @@ import {
   deleteDevice,
   updateDevice,
   bulkDeleteDevices,
+  importDevicesFromCSV,
+  exportDevicesToCSV,
 } from '../api/deviceApi';
 import { runNetworkScan } from '../api/scanApi';
 import {
@@ -277,6 +279,48 @@ const DevicesPage = () => {
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to delete devices.'));
       setBulkDeleteLoading(false);
+    }
+  };
+
+  // =========================
+  // CSV Import/Export
+  // =========================
+  const fileInputRef = React.useRef(null);
+
+  const handleImportCSV = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setError('');
+      await importDevicesFromCSV(file);
+      // Refresh after successful import
+      window.location.reload();
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to import devices from CSV.'));
+    }
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleExportCSV = async () => {
+    try {
+      setError('');
+      const response = await exportDevicesToCSV();
+      // Create download link
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'devices.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to export devices to CSV.'));
     }
   };
 
@@ -844,6 +888,25 @@ const DevicesPage = () => {
                   </div>
                 )}
 
+                {/* CSV Import/Export Toolbar */}
+                <div style={styles.csvToolbar}>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <label style={styles.csvButtonLabel}>
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={handleImportCSV}
+                        style={{ display: 'none' }}
+                        ref={fileInputRef}
+                      />
+                      <span style={styles.csvButton}>📥 Import CSV</span>
+                    </label>
+                    <button onClick={handleExportCSV} style={styles.csvButton}>
+                      📥 Export CSV
+                    </button>
+                  </div>
+                </div>
+
                 {/* Bulk Delete Toolbar */}
                 {selectedDeviceIds.size > 0 && (
                   <div style={styles.bulkActionToolbar}>
@@ -1229,6 +1292,26 @@ const styles = {
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: '600',
+  },
+  csvToolbar: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    padding: '8px 0',
+    marginBottom: '10px',
+  },
+  csvButtonLabel: {
+    cursor: 'pointer',
+  },
+  csvButton: {
+    padding: '8px 14px',
+    backgroundColor: '#2980b9',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '600',
+    display: 'inline-block',
   },
 };
 

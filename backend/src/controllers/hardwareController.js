@@ -7,6 +7,8 @@ import {
   insertAuditLog,
 } from '../utils/audit.js';
 import { HttpError } from '../errors/httpError.js';
+import { parseCSV, generateCSV, validateRows } from '../utils/csv.js';
+import { hardwareCSVImportSchema } from '../validation/schemas.js';
 
 // UI forms submit empty strings for optional fields; DB should store those as NULL.
 const normalize = (v) => (v === '' || v === undefined ? null : v);
@@ -190,5 +192,128 @@ export const bulkDeleteHardware = async (req, res, next) => {
     next(err);
   } finally {
     client.release();
+  }
+};
+
+export const importHardwareFromCSV = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      next(new HttpError(400, 'No file provided.'));
+      return;
+    }
+
+    // Parse CSV
+    const rows = parseCSV(req.file.buffer, [
+      'name',
+      'type',
+      'model',
+      'manufacturer',
+      'purchase_date',
+      'cost',
+      'location',
+      'warranty_expiry',
+      'status',
+    ]);
+
+    // Validate rows
+    const { valid: validRows, invalid: invalidRows } = validateRows(rows, hardwareCSVImportSchema);
+
+    if (validRows.length === 0) {
+      next(new HttpError(400, `No valid rows to import. ${invalidRows.length} row(s) with errors.`));
+      return;
+    }
+
+    // Helper function to normalize values
+    const normalize = (v) => (v === '' || v === undefined ? null : v);
+
+    // Insert valid rows
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const importedHardware = [];
+      const metadata = buildMetadata(req);
+      const actorName = actorNameFromRequest(req);
+
+      for (const row of validRows) {
+        // Insert hardware
+        const result = await client.query(
+          `INSERT INTO hardware (name, type, model, manufacturer, purchase_date, cost, location, warranty_expiry, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           RETURNING id`,
+          [
+            normalize(row.name),
+            normalize(row.type),
+            normalize(row.model),
+            normalize(row.manufacturer),
+            row.purchase_date || null,
+            normalize(row.cost),
+            normalize(row.location),
+            row.warranty_expiry || null,
+            normalize(row.status),
+          ]
+        );
+
+        const hardwareId = result.rows[0].id;
+
+        // Audit log
+        await insertAuditLog(client, {
+          entityType: 'hardware',
+          entityId: hardwareId,
+          action: 'created',
+          actorName,
+          changes: { after: row },
+          metadata,
+        });
+
+        importedHardware.push({ id: hardwareId, ...row });
+      }
+
+      await client.query('COMMIT');
+
+      res.json({
+        message: `CSV import completed. ${importedHardware.length} hardware item(s) imported successfully.`,
+        imported: importedHardware.length,
+        skipped: validRows.length - importedHardware.length,
+        invalidRows: invalidRows.length,
+        errors: invalidRows,
+      });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const exportHardwareToCSV = async (req, res, next) => {
+  try {
+    const result = await pool.query('SELECT * FROM hardware ORDER BY id ASC');
+    const hardware = result.rows;
+
+    // Select columns to export
+    const columns = [
+      'id',
+      'name',
+      'type',
+      'model',
+      'manufacturer',
+      'purchase_date',
+      'cost',
+      'location',
+      'warranty_expiry',
+      'status',
+    ];
+
+    const csv = generateCSV(hardware, columns);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="hardware.csv"');
+    res.send(csv);
+  } catch (err) {
+    next(err);
   }
 };

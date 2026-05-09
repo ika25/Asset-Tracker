@@ -6,6 +6,8 @@ import {
   insertAuditLog,
 } from '../utils/audit.js';
 import { HttpError } from '../errors/httpError.js';
+import { parseCSV, generateCSV, validateRows } from '../utils/csv.js';
+import { softwareCSVImportSchema } from '../validation/schemas.js';
 
 // Convert optional empty fields to NULL before writing to Postgres.
 const normalize = (v) => (v === '' || v === undefined ? null : v);
@@ -182,5 +184,108 @@ export const bulkDeleteSoftware = async (req, res, next) => {
     next(err);
   } finally {
     client.release();
+  }
+};
+
+export const importSoftwareFromCSV = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      next(new HttpError(400, 'No file provided.'));
+      return;
+    }
+
+    // Parse CSV
+    const rows = parseCSV(req.file.buffer, [
+      'name',
+      'version',
+      'vendor',
+      'license_type',
+      'license_expiry',
+      'installation_date',
+    ]);
+
+    // Validate rows
+    const { valid: validRows, invalid: invalidRows } = validateRows(rows, softwareCSVImportSchema);
+
+    if (validRows.length === 0) {
+      next(new HttpError(400, `No valid rows to import. ${invalidRows.length} row(s) with errors.`));
+      return;
+    }
+
+    // Insert valid rows
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const importedSoftware = [];
+      const metadata = buildMetadata(req);
+      const actorName = actorNameFromRequest(req);
+
+      for (const row of validRows) {
+        // Insert software
+        const result = await client.query(
+          `INSERT INTO software (name, version, vendor, license_type, license_expiry, installation_date)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id`,
+          [
+            normalize(row.name),
+            normalize(row.version),
+            normalize(row.vendor),
+            normalize(row.license_type),
+            row.license_expiry || null,
+            row.installation_date || null,
+          ]
+        );
+
+        const softwareId = result.rows[0].id;
+
+        // Audit log
+        await insertAuditLog(client, {
+          entityType: 'software',
+          entityId: softwareId,
+          action: 'created',
+          actorName,
+          changes: { after: row },
+          metadata,
+        });
+
+        importedSoftware.push({ id: softwareId, ...row });
+      }
+
+      await client.query('COMMIT');
+
+      res.json({
+        message: `CSV import completed. ${importedSoftware.length} software item(s) imported successfully.`,
+        imported: importedSoftware.length,
+        skipped: validRows.length - importedSoftware.length,
+        invalidRows: invalidRows.length,
+        errors: invalidRows,
+      });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const exportSoftwareToCSV = async (req, res, next) => {
+  try {
+    const result = await pool.query('SELECT * FROM software ORDER BY id ASC');
+    const software = result.rows;
+
+    // Select columns to export
+    const columns = ['id', 'name', 'version', 'vendor', 'license_type', 'license_expiry', 'installation_date'];
+
+    const csv = generateCSV(software, columns);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="software.csv"');
+    res.send(csv);
+  } catch (err) {
+    next(err);
   }
 };

@@ -74,5 +74,42 @@ export const bulkDeleteSchema = z.object({
   ids: z.array(z.coerce.number().int().positive()).min(1, 'At least one ID is required.'),
 }).strict();
 
+// CSV Import Schemas - lenient, allow missing fields
+export const deviceCSVImportSchema = z.object({
+  name: optionalString,
+  ip_address: optionalString,
+  type: optionalString,
+  status: statusValue,
+  location: optionalString,
+  manufacturer: optionalString,
+  os: optionalString,
+  user_name: optionalString,
+  ram: optionalString,
+  disk_space: optionalString,
+  serial_number: optionalString,
+  install_date: dateString,
+}).strict();
+
+export const hardwareCSVImportSchema = z.object({
+  name: optionalString,
+  type: optionalString,
+  model: optionalString,
+  manufacturer: optionalString,
+  purchase_date: dateString,
+  cost: optionalString,
+  location: optionalString,
+  warranty_expiry: dateString,
+  status: statusValue,
+}).strict();
+
+export const softwareCSVImportSchema = z.object({
+  name: optionalString,
+  version: optionalString,
+  vendor: optionalString,
+  license_type: optionalString,
+  license_expiry: dateString,
+  installation_date: dateString,
+}).strict();
+
 export const idParamSchema = idParam;
 export const deviceIdParamSchema = deviceIdParam;

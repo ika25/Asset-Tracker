@@ -6,6 +6,8 @@ import {
   insertAuditLog,
 } from '../utils/audit.js';
 import { HttpError } from '../errors/httpError.js';
+import { parseCSV, generateCSV, validateRows } from '../utils/csv.js';
+import { deviceCSVImportSchema } from '../validation/schemas.js';
 
 const DEVICE_SELECT = `
   SELECT
@@ -410,5 +412,153 @@ export const bulkDeleteDevices = async (req, res, next) => {
     next(err);
   } finally {
     client.release();
+  }
+};
+
+export const importDevicesFromCSV = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      next(new HttpError(400, 'No file provided.'));
+      return;
+    }
+
+    // Parse CSV
+    const rows = parseCSV(req.file.buffer, [
+      'name',
+      'ip_address',
+      'type',
+      'status',
+      'location',
+      'manufacturer',
+      'os',
+      'user_name',
+      'ram',
+      'disk_space',
+      'serial_number',
+      'install_date',
+    ]);
+
+    // Validate rows
+    const { valid: validRows, invalid: invalidRows } = validateRows(rows, deviceCSVImportSchema);
+
+    if (validRows.length === 0) {
+      next(new HttpError(400, `No valid rows to import. ${invalidRows.length} row(s) with errors.`));
+      return;
+    }
+
+    // Insert valid rows
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const importedDevices = [];
+      const metadata = buildMetadata(req);
+      const actorName = actorNameFromRequest(req);
+
+      for (const row of validRows) {
+        const ipAddress = normalizeIpAddress(row.ip_address);
+
+        // Check for duplicate IP
+        const existingDevice = await getDeviceByNormalizedIp(client, ipAddress);
+        if (existingDevice) {
+          // Skip devices with duplicate IPs
+          continue;
+        }
+
+        // Insert device
+        const deviceResult = await client.query(
+          `INSERT INTO devices (name, ip_address, type, status, location)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id`,
+          [
+            normalizeValue(row.name),
+            ipAddress,
+            normalizeValue(row.type),
+            normalizeValue(row.status),
+            normalizeValue(row.location),
+          ]
+        );
+
+        const deviceId = deviceResult.rows[0].id;
+
+        // Insert device details
+        await client.query(
+          `INSERT INTO device_details (
+             device_id, manufacturer, os, user_name, ram, disk_space, serial_number, install_date
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            deviceId,
+            normalizeValue(row.manufacturer),
+            normalizeValue(row.os),
+            normalizeValue(row.user_name),
+            normalizeValue(row.ram),
+            normalizeValue(row.disk_space),
+            normalizeValue(row.serial_number),
+            row.install_date || null,
+          ]
+        );
+
+        // Audit log
+        await insertAuditLog(client, {
+          entityType: 'device',
+          entityId: deviceId,
+          action: 'created',
+          actorName,
+          changes: { after: row },
+          metadata,
+        });
+
+        importedDevices.push({ id: deviceId, ...row });
+      }
+
+      await client.query('COMMIT');
+
+      res.json({
+        message: `CSV import completed. ${importedDevices.length} device(s) imported successfully.`,
+        imported: importedDevices.length,
+        skipped: validRows.length - importedDevices.length,
+        invalidRows: invalidRows.length,
+        errors: invalidRows,
+      });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const exportDevicesToCSV = async (req, res, next) => {
+  try {
+    const result = await pool.query(DEVICE_SELECT);
+    const devices = result.rows;
+
+    // Select columns to export
+    const columns = [
+      'id',
+      'name',
+      'ip_address',
+      'type',
+      'status',
+      'location',
+      'manufacturer',
+      'os',
+      'user_name',
+      'ram',
+      'disk_space',
+      'serial_number',
+      'install_date',
+    ];
+
+    const csv = generateCSV(devices, columns);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="devices.csv"');
+    res.send(csv);
+  } catch (err) {
+    next(err);
   }
 };

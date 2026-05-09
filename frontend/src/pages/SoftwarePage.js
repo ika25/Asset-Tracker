@@ -6,7 +6,10 @@ import {
   getSoftware,
   updateSoftware,
   bulkDeleteSoftware,
+  importSoftwareFromCSV,
+  exportSoftwareToCSV,
 } from '../api/softwareApi';
+import { getApiErrorMessage } from '../api/client';
 import { useCrudResource } from '../hooks/useCrudResource';
 import { sanitizeSoftwarePayload } from '../utils/inventoryPayloadConfig';
 
@@ -184,6 +187,46 @@ const SoftwarePage = () => {
     } catch (err) {
       console.error('Bulk delete failed:', err);
       setBulkDeleteLoading(false);
+    }
+  };
+
+  // =========================
+  // CSV Import/Export
+  // =========================
+  const csvFileInputRef = React.useRef(null);
+  const [csvError, setCsvError] = useState('');
+
+  const handleImportCSV = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setCsvError('');
+      await importSoftwareFromCSV(file);
+      window.location.reload();
+    } catch (err) {
+      setCsvError(getApiErrorMessage(err, 'Failed to import software from CSV.'));
+    }
+
+    if (csvFileInputRef.current) {
+      csvFileInputRef.current.value = '';
+    }
+  };
+
+  const handleExportCSV = async () => {
+    try {
+      setCsvError('');
+      const response = await exportSoftwareToCSV();
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'software.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setCsvError(getApiErrorMessage(err, 'Failed to export software to CSV.'));
     }
   };
 
@@ -424,6 +467,26 @@ const SoftwarePage = () => {
                     </div>
                   </div>
                 )}
+
+                {/* CSV Import/Export */}
+                <div style={styles.csvToolbar}>
+                  {csvError && <span style={{ color: '#e74c3c', fontSize: '13px', marginRight: 'auto' }}>{csvError}</span>}
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <label style={styles.csvButtonLabel}>
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={handleImportCSV}
+                        style={{ display: 'none' }}
+                        ref={csvFileInputRef}
+                      />
+                      <span style={styles.csvButton}>📥 Import CSV</span>
+                    </label>
+                    <button onClick={handleExportCSV} style={styles.csvButton}>
+                      📤 Export CSV
+                    </button>
+                  </div>
+                </div>
 
                 {/* Bulk Delete Toolbar */}
                 {selectedSoftwareIds.size > 0 && (
@@ -725,6 +788,26 @@ const styles = {
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: '600',
+  },
+  csvToolbar: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    padding: '8px 0',
+    marginBottom: '10px',
+  },
+  csvButtonLabel: {
+    cursor: 'pointer',
+  },
+  csvButton: {
+    padding: '8px 14px',
+    backgroundColor: '#2980b9',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '600',
+    display: 'inline-block',
   },
 };
 
