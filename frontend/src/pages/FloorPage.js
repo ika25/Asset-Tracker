@@ -95,6 +95,9 @@ const FloorPage = () => {
   const mapViewportRef = useRef(null);
   const hasAutoFittedRef = useRef(false);
   const floorImageInputRef = useRef(null);
+  const eraseCanvasRef = useRef(null);       // offscreen canvas for erase operations
+  const konvaFloorImageRef = useRef(null);   // direct ref to Konva Image node
+  const isEraserActiveRef = useRef(false);   // mouse-held state (avoids stale closure)
   const [layoutOptions, setLayoutOptions] = useState([
     { id: DEFAULT_LAYOUT_ID, name: 'Default Layout', src: DEFAULT_FLOOR_IMAGE_PATH },
   ]);
@@ -107,6 +110,10 @@ const FloorPage = () => {
   const [zoneDrawCurrent, setZoneDrawCurrent] = useState(null);
   const [showZonePanel, setShowZonePanel] = useState(false);
   const [nextZoneColorIndex, setNextZoneColorIndex] = useState(0);
+
+  // Eraser
+  const [isErasing, setIsErasing] = useState(false);
+  const [eraserSize, setEraserSize] = useState(20);
   const {
     items: devices,
     setItems: setDevices,
@@ -523,6 +530,64 @@ const FloorPage = () => {
   };
 
   // =========================
+  // ERASER HELPERS
+  // =========================
+  // Initialise offscreen canvas from the current floor image (once per erase session).
+  const initEraseCanvas = useCallback(() => {
+    if (eraseCanvasRef.current) return eraseCanvasRef.current;
+    if (!floorImage) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = mapSize.width;
+    canvas.height = mapSize.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(floorImage, 0, 0, mapSize.width, mapSize.height);
+    eraseCanvasRef.current = canvas;
+    return canvas;
+  }, [floorImage, mapSize]);
+
+  // Paint a transparent circle at canvas-pixel coords and refresh the Konva node.
+  const applyEraseStroke = useCallback((canvasX, canvasY, size) => {
+    const canvas = eraseCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(canvasX, canvasY, size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    // Update Konva directly — no React re-render needed during the stroke
+    if (konvaFloorImageRef.current) {
+      konvaFloorImageRef.current.image(canvas);
+      konvaFloorImageRef.current.getLayer()?.batchDraw();
+    }
+  }, []);
+
+  // On mouse-up: persist the edited image back into the layouts store.
+  const commitErase = useCallback(() => {
+    const canvas = eraseCanvasRef.current;
+    if (!canvas) return;
+    const dataUrl = canvas.toDataURL('image/png');
+    // Reload into React state so Konva Image prop stays in sync
+    const img = new window.Image();
+    img.src = dataUrl;
+    img.onload = () => setFloorImage(img);
+    // Update the active layout's src in state and localStorage
+    setLayoutOptions((prev) => {
+      const next = prev.map((l) =>
+        l.id === activeLayoutId ? { ...l, src: dataUrl } : l
+      );
+      persistLayouts(next, activeLayoutId);
+      return next;
+    });
+  }, [activeLayoutId, persistLayouts]);
+
+  // Reset the erase canvas when the layout changes (new image must be re-drawn).
+  useEffect(() => {
+    eraseCanvasRef.current = null;
+  }, [activeLayoutId]);
+
+  // =========================
   // ZONE HANDLERS
   // =========================
   const handleAddZone = () => {
@@ -724,6 +789,15 @@ const FloorPage = () => {
       return;
     }
 
+    if (isErasing) {
+      isEraserActiveRef.current = true;
+      const canvasX = (pointer.x - position.x) / zoom;
+      const canvasY = (pointer.y - position.y) / zoom;
+      initEraseCanvas();
+      applyEraseStroke(canvasX, canvasY, eraserSize);
+      return;
+    }
+
     setIsPanning(true);
     setPanStart(pointer);
   };
@@ -733,6 +807,17 @@ const FloorPage = () => {
       handleZoneMouseMove(e);
       return;
     }
+
+    if (isErasing && isEraserActiveRef.current) {
+      const stage = e.target.getStage();
+      const pointer = stage?.getPointerPosition();
+      if (!pointer) return;
+      const canvasX = (pointer.x - position.x) / zoom;
+      const canvasY = (pointer.y - position.y) / zoom;
+      applyEraseStroke(canvasX, canvasY, eraserSize);
+      return;
+    }
+
     if (!isPanning) return;
 
     const stage = e.target.getStage();
@@ -749,6 +834,11 @@ const FloorPage = () => {
   const handleMouseUp = () => {
     if (isDrawingZone && zoneDrawStart) {
       handleZoneMouseUp();
+      return;
+    }
+    if (isErasing && isEraserActiveRef.current) {
+      isEraserActiveRef.current = false;
+      commitErase();
       return;
     }
     setIsPanning(false);
@@ -975,6 +1065,42 @@ const FloorPage = () => {
             Zones{activeZones.length > 0 ? ` (${activeZones.length})` : ''}
           </button>
 
+          {/* Eraser */}
+          <button
+            onClick={() => {
+              setIsErasing((v) => !v);
+              setIsPlacingDevice(false);
+              setIsDrawingZone(false);
+            }}
+            style={{
+              ...styles.toolButton,
+              backgroundColor: isErasing ? '#e74c3c' : '#7f8c8d',
+            }}
+            title={isErasing ? 'Exit eraser mode' : 'Erase parts of the floor image'}
+          >
+            {isErasing ? '🧹 Erasing…' : '🧹 Erase'}
+          </button>
+
+          {isErasing && (
+            <div style={styles.eraserSizeRow}>
+              <span style={styles.eraserSizeLabel}>Size:</span>
+              {[8, 20, 40, 70].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setEraserSize(s)}
+                  style={{
+                    ...styles.eraserSizeBtn,
+                    backgroundColor: eraserSize === s ? '#e74c3c' : '#ecf0f1',
+                    color: eraserSize === s ? '#fff' : '#2c3e50',
+                  }}
+                  title={`Eraser size ${s}px`}
+                >
+                  {s === 8 ? 'XS' : s === 20 ? 'S' : s === 40 ? 'M' : 'L'}
+                </button>
+              ))}
+            </div>
+          )}
+
           <select
             value={activeLayoutId}
             onChange={handleLayoutChange}
@@ -1076,6 +1202,12 @@ const FloorPage = () => {
             Click and drag on the map to draw a zone rectangle.
           </div>
         )}
+
+        {isErasing && (
+          <div style={{ ...styles.placementInfo, backgroundColor: '#fdecea', color: '#c0392b', borderColor: '#e74c3c' }}>
+            🧹 Erase mode — click or drag to erase parts of the floor image. Changes are saved automatically on release.
+          </div>
+        )}
       </div>
 
       {/* ZONE PANEL */}
@@ -1157,7 +1289,7 @@ const FloorPage = () => {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
-            style={{ cursor: isDrawingZone ? 'crosshair' : (isPlacingDevice ? 'crosshair' : (isPanning ? 'grabbing' : 'grab')) }}
+            style={{ cursor: isErasing ? 'crosshair' : (isDrawingZone ? 'crosshair' : (isPlacingDevice ? 'crosshair' : (isPanning ? 'grabbing' : 'grab'))) }}
           >
             <Layer>
               <Group x={position.x} y={position.y} scaleX={zoom} scaleY={zoom}>
@@ -1170,6 +1302,7 @@ const FloorPage = () => {
               {/* Floor Image */}
               {floorImage && (
                 <Image
+                  ref={konvaFloorImageRef}
                   image={floorImage}
                   width={mapSize.width}
                   height={mapSize.height}
@@ -2002,6 +2135,25 @@ const styles = {
     fontSize: '13px',
     fontWeight: 600,
     alignSelf: 'flex-start',
+  },
+  eraserSizeRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '5px',
+    marginLeft: '4px',
+  },
+  eraserSizeLabel: {
+    fontSize: '12px',
+    color: '#7f8c8d',
+    fontWeight: 600,
+  },
+  eraserSizeBtn: {
+    padding: '4px 9px',
+    border: '1px solid #bdc3c7',
+    borderRadius: '5px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: 600,
   },
 
 };
