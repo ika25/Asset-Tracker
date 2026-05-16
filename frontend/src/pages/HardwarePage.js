@@ -299,6 +299,14 @@ const HardwarePage = () => {
     return 0;
   });
 
+  const handleDashboardTypeClick = (type) => {
+    setTypeFilter((current) => (current === type ? 'All' : type));
+  };
+
+  const handleDashboardStatusClick = (status) => {
+    setStatusFilter((current) => (current === status ? 'All' : status));
+  };
+
   const dashboardMetrics = useMemo(() => {
     const typeCounts = hardwareList.reduce((counts, hardware) => {
       const key = String(hardware.type || 'Unspecified').trim() || 'Unspecified';
@@ -457,6 +465,7 @@ const HardwarePage = () => {
                 <div>
                   <h3 style={styles.dashboardTitle}>Hardware Dashboard</h3>
                   <div style={styles.dashboardHint}>Visualize hardware status, asset mix, and warranty coverage in one place.</div>
+                  <div style={styles.dashboardSubHint}>Click a chart item to filter the list.</div>
                 </div>
                 <div style={styles.dashboardBadgeRow}>
                   <span style={styles.dashboardBadge}>Total: {dashboardMetrics.total}</span>
@@ -504,10 +513,16 @@ const HardwarePage = () => {
                     </div>
                     <div style={styles.dashboardLegend}>
                       {statusSegments.map((segment) => (
-                        <div key={segment.key} style={styles.dashboardLegendRow}>
+                        <button
+                          key={segment.key}
+                          type="button"
+                          onClick={() => handleDashboardStatusClick(segment.label)}
+                          style={styles.dashboardLegendButton}
+                          title={`Filter by ${segment.label}`}
+                        >
                           <span style={{ ...styles.dashboardLegendDot, backgroundColor: segment.color }} />
                           <span>{segment.label}: {segment.value}</span>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -522,13 +537,21 @@ const HardwarePage = () => {
                       {dashboardMetrics.topTypes.map(([type, count]) => {
                         const width = `${Math.max(8, (count / Math.max(1, dashboardMetrics.total)) * 100)}%`;
                         return (
-                          <div key={type} style={styles.dashboardBarRow}>
-                            <div style={styles.dashboardBarLabel}>{type}</div>
-                            <div style={styles.dashboardBarTrack}>
-                              <div style={{ ...styles.dashboardBarFill, width }} />
+                          <button
+                            key={type}
+                            type="button"
+                            onClick={() => handleDashboardTypeClick(type)}
+                            style={styles.dashboardBarButton}
+                            title={`Filter by ${type}`}
+                          >
+                            <div style={styles.dashboardBarRow}>
+                              <div style={styles.dashboardBarLabel}>{type}</div>
+                              <div style={styles.dashboardBarTrack}>
+                                <div style={{ ...styles.dashboardBarFill, width }} />
+                              </div>
+                              <div style={styles.dashboardBarValue}>{count}</div>
                             </div>
-                            <div style={styles.dashboardBarValue}>{count}</div>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
@@ -1103,6 +1126,12 @@ const styles = {
     color: '#60727f',
     fontSize: '13px',
   },
+  dashboardSubHint: {
+    marginTop: '4px',
+    color: '#7c8b95',
+    fontSize: '12px',
+    fontWeight: '600',
+  },
   dashboardBadgeRow: {
     display: 'flex',
     gap: '8px',
@@ -1201,6 +1230,17 @@ const styles = {
     alignItems: 'center',
     gap: '8px',
   },
+  dashboardLegendButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: 0,
+    border: 'none',
+    background: 'transparent',
+    cursor: 'pointer',
+    color: 'inherit',
+    textAlign: 'left',
+  },
   dashboardLegendDot: {
     width: '10px',
     height: '10px',
@@ -1218,6 +1258,14 @@ const styles = {
     gridTemplateColumns: '110px 1fr 34px',
     gap: '10px',
     alignItems: 'center',
+  },
+  dashboardBarButton: {
+    width: '100%',
+    padding: 0,
+    border: 'none',
+    background: 'transparent',
+    cursor: 'pointer',
+    textAlign: 'left',
   },
   dashboardBarLabel: {
     fontSize: '13px',

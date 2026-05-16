@@ -281,6 +281,14 @@ const SoftwarePage = () => {
     return 0;
   });
 
+  const handleDashboardVendorClick = (vendor) => {
+    setVendorFilter((current) => (current === vendor ? 'All' : vendor));
+  };
+
+  const handleDashboardLicenseClick = (licenseType) => {
+    setLicenseFilter((current) => (current === licenseType ? 'All' : licenseType));
+  };
+
   const dashboardMetrics = useMemo(() => {
     const vendorCounts = softwareList.reduce((counts, software) => {
       const key = String(software.vendor || 'Unspecified').trim() || 'Unspecified';
@@ -402,6 +410,7 @@ const SoftwarePage = () => {
                 <div>
                   <h3 style={styles.dashboardTitle}>Software Dashboard</h3>
                   <div style={styles.dashboardHint}>Track license health, vendor spread, and installation coverage at a glance.</div>
+                  <div style={styles.dashboardSubHint}>Click a bar to filter the table.</div>
                 </div>
                 <div style={styles.dashboardBadgeRow}>
                   <span style={styles.dashboardBadge}>Total: {dashboardMetrics.total}</span>
@@ -439,13 +448,21 @@ const SoftwarePage = () => {
                       {dashboardMetrics.topLicenseTypes.map(([type, count]) => {
                         const width = `${Math.max(8, (count / Math.max(1, dashboardMetrics.total)) * 100)}%`;
                         return (
-                          <div key={type} style={styles.dashboardBarRow}>
-                            <div style={styles.dashboardBarLabel}>{type}</div>
-                            <div style={styles.dashboardBarTrack}>
-                              <div style={{ ...styles.dashboardBarFill, width }} />
+                          <button
+                            key={type}
+                            type="button"
+                            onClick={() => handleDashboardLicenseClick(type)}
+                            style={styles.dashboardBarButton}
+                            title={`Filter by ${type}`}
+                          >
+                            <div style={styles.dashboardBarRow}>
+                              <div style={styles.dashboardBarLabel}>{type}</div>
+                              <div style={styles.dashboardBarTrack}>
+                                <div style={{ ...styles.dashboardBarFill, width }} />
+                              </div>
+                              <div style={styles.dashboardBarValue}>{count}</div>
                             </div>
-                            <div style={styles.dashboardBarValue}>{count}</div>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
@@ -461,13 +478,21 @@ const SoftwarePage = () => {
                       {dashboardMetrics.topVendors.map(([vendor, count]) => {
                         const width = `${Math.max(8, (count / Math.max(1, dashboardMetrics.total)) * 100)}%`;
                         return (
-                          <div key={vendor} style={styles.dashboardBarRow}>
-                            <div style={styles.dashboardBarLabel}>{vendor}</div>
-                            <div style={styles.dashboardBarTrack}>
-                              <div style={{ ...styles.dashboardBarFill, width }} />
+                          <button
+                            key={vendor}
+                            type="button"
+                            onClick={() => handleDashboardVendorClick(vendor)}
+                            style={styles.dashboardBarButton}
+                            title={`Filter by ${vendor}`}
+                          >
+                            <div style={styles.dashboardBarRow}>
+                              <div style={styles.dashboardBarLabel}>{vendor}</div>
+                              <div style={styles.dashboardBarTrack}>
+                                <div style={{ ...styles.dashboardBarFill, width }} />
+                              </div>
+                              <div style={styles.dashboardBarValue}>{count}</div>
                             </div>
-                            <div style={styles.dashboardBarValue}>{count}</div>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
@@ -993,6 +1018,12 @@ const styles = {
     color: '#60727f',
     fontSize: '13px',
   },
+  dashboardSubHint: {
+    marginTop: '4px',
+    color: '#7c8b95',
+    fontSize: '12px',
+    fontWeight: '600',
+  },
   dashboardBadgeRow: {
     display: 'flex',
     gap: '8px',
@@ -1062,6 +1093,14 @@ const styles = {
     gridTemplateColumns: '110px 1fr 34px',
     gap: '10px',
     alignItems: 'center',
+  },
+  dashboardBarButton: {
+    width: '100%',
+    padding: 0,
+    border: 'none',
+    background: 'transparent',
+    cursor: 'pointer',
+    textAlign: 'left',
   },
   dashboardBarLabel: {
     fontSize: '13px',
