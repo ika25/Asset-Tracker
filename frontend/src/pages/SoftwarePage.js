@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   createSoftware,
@@ -33,6 +33,25 @@ const parseDateSortValue = (value) => {
 
   const parsed = new Date(value).getTime();
   return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+};
+
+const daysUntil = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const target = new Date(parsed);
+  target.setHours(0, 0, 0, 0);
+
+  return Math.ceil((target - today) / (1000 * 60 * 60 * 24));
 };
 
 const SoftwarePage = () => {
@@ -262,6 +281,49 @@ const SoftwarePage = () => {
     return 0;
   });
 
+  const dashboardMetrics = useMemo(() => {
+    const vendorCounts = softwareList.reduce((counts, software) => {
+      const key = String(software.vendor || 'Unspecified').trim() || 'Unspecified';
+      counts[key] = (counts[key] || 0) + 1;
+      return counts;
+    }, {});
+
+    const licenseCounts = softwareList.reduce((counts, software) => {
+      const key = String(software.license_type || 'Unspecified').trim() || 'Unspecified';
+      counts[key] = (counts[key] || 0) + 1;
+      return counts;
+    }, {});
+
+    const expiringSoon = softwareList.filter((software) => {
+      const remaining = daysUntil(software.license_expiry);
+      return remaining !== null && remaining >= 0 && remaining <= 30;
+    }).length;
+
+    const expired = softwareList.filter((software) => {
+      const remaining = daysUntil(software.license_expiry);
+      return remaining !== null && remaining < 0;
+    }).length;
+
+    const installedEntries = softwareList.filter((software) => software.installed_on).length;
+
+    const topVendors = Object.entries(vendorCounts)
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 5);
+
+    const topLicenseTypes = Object.entries(licenseCounts)
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 4);
+
+    return {
+      total: softwareList.length,
+      installedEntries,
+      expiringSoon,
+      expired,
+      topVendors,
+      topLicenseTypes,
+    };
+  }, [softwareList]);
+
   return (
     <div style={styles.container}>
       {/* MAIN CONTENT */}
@@ -335,6 +397,105 @@ const SoftwarePage = () => {
           <div style={styles.section}>
             <h2>Software Inventory</h2>
             {error && <div style={styles.errorBanner}>{error}</div>}
+            <div style={styles.dashboardPanel}>
+              <div style={styles.dashboardHeaderRow}>
+                <div>
+                  <h3 style={styles.dashboardTitle}>Software Dashboard</h3>
+                  <div style={styles.dashboardHint}>Track license health, vendor spread, and installation coverage at a glance.</div>
+                </div>
+                <div style={styles.dashboardBadgeRow}>
+                  <span style={styles.dashboardBadge}>Total: {dashboardMetrics.total}</span>
+                  <span style={styles.dashboardBadge}>Expiring Soon: {dashboardMetrics.expiringSoon}</span>
+                  <span style={styles.dashboardBadge}>Expired: {dashboardMetrics.expired}</span>
+                </div>
+              </div>
+
+              <div style={styles.dashboardKpis}>
+                <div style={styles.dashboardKpiCard}>
+                  <div style={styles.dashboardKpiLabel}>Total Software</div>
+                  <div style={styles.dashboardKpiValue}>{dashboardMetrics.total}</div>
+                </div>
+                <div style={styles.dashboardKpiCard}>
+                  <div style={styles.dashboardKpiLabel}>Installed Records</div>
+                  <div style={{ ...styles.dashboardKpiValue, color: '#3ba57d' }}>{dashboardMetrics.installedEntries}</div>
+                </div>
+                <div style={styles.dashboardKpiCard}>
+                  <div style={styles.dashboardKpiLabel}>Expiring in 30 Days</div>
+                  <div style={{ ...styles.dashboardKpiValue, color: '#e67e22' }}>{dashboardMetrics.expiringSoon}</div>
+                </div>
+                <div style={styles.dashboardKpiCard}>
+                  <div style={styles.dashboardKpiLabel}>Expired Licenses</div>
+                  <div style={{ ...styles.dashboardKpiValue, color: '#e74c3c' }}>{dashboardMetrics.expired}</div>
+                </div>
+              </div>
+
+              <div style={styles.dashboardGrid}>
+                <div style={styles.dashboardCard}>
+                  <h4 style={styles.dashboardCardTitle}>License Mix</h4>
+                  {dashboardMetrics.topLicenseTypes.length === 0 ? (
+                    <div style={styles.dashboardEmpty}>No software yet.</div>
+                  ) : (
+                    <div style={styles.dashboardBars}>
+                      {dashboardMetrics.topLicenseTypes.map(([type, count]) => {
+                        const width = `${Math.max(8, (count / Math.max(1, dashboardMetrics.total)) * 100)}%`;
+                        return (
+                          <div key={type} style={styles.dashboardBarRow}>
+                            <div style={styles.dashboardBarLabel}>{type}</div>
+                            <div style={styles.dashboardBarTrack}>
+                              <div style={{ ...styles.dashboardBarFill, width }} />
+                            </div>
+                            <div style={styles.dashboardBarValue}>{count}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div style={styles.dashboardCard}>
+                  <h4 style={styles.dashboardCardTitle}>Top Vendors</h4>
+                  {dashboardMetrics.topVendors.length === 0 ? (
+                    <div style={styles.dashboardEmpty}>No software yet.</div>
+                  ) : (
+                    <div style={styles.dashboardBars}>
+                      {dashboardMetrics.topVendors.map(([vendor, count]) => {
+                        const width = `${Math.max(8, (count / Math.max(1, dashboardMetrics.total)) * 100)}%`;
+                        return (
+                          <div key={vendor} style={styles.dashboardBarRow}>
+                            <div style={styles.dashboardBarLabel}>{vendor}</div>
+                            <div style={styles.dashboardBarTrack}>
+                              <div style={{ ...styles.dashboardBarFill, width }} />
+                            </div>
+                            <div style={styles.dashboardBarValue}>{count}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div style={styles.dashboardCard}>
+                  <h4 style={styles.dashboardCardTitle}>License Health</h4>
+                  <div style={styles.dashboardSnapshot}>
+                    <div style={styles.dashboardSnapshotValue}>{dashboardMetrics.expiringSoon}</div>
+                    <div style={styles.dashboardSnapshotLabel}>licenses expiring within 30 days</div>
+                    <div style={styles.dashboardSnapshotSubtext}>
+                      {dashboardMetrics.expired} licenses are already expired.
+                    </div>
+                  </div>
+                  <div style={styles.dashboardMiniStats}>
+                    <div style={styles.dashboardMiniStat}>
+                      <span style={styles.dashboardMiniStatLabel}>Installed</span>
+                      <span style={styles.dashboardMiniStatValue}>{dashboardMetrics.installedEntries}</span>
+                    </div>
+                    <div style={styles.dashboardMiniStat}>
+                      <span style={styles.dashboardMiniStatLabel}>Tracked</span>
+                      <span style={styles.dashboardMiniStatValue}>{dashboardMetrics.total}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div style={styles.filterBar}>
               <input
                 placeholder="Search name, version, installed on"
@@ -808,6 +969,178 @@ const styles = {
     fontSize: '13px',
     fontWeight: '600',
     display: 'inline-block',
+  },
+  dashboardPanel: {
+    marginTop: '14px',
+    padding: '16px',
+    border: '1px solid #dde4e7',
+    borderRadius: '10px',
+    background: 'linear-gradient(180deg, #ffffff 0%, #f7fbf9 100%)',
+  },
+  dashboardHeaderRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '14px',
+    flexWrap: 'wrap',
+  },
+  dashboardTitle: {
+    margin: 0,
+    color: '#2c3e50',
+  },
+  dashboardHint: {
+    marginTop: '6px',
+    color: '#60727f',
+    fontSize: '13px',
+  },
+  dashboardBadgeRow: {
+    display: 'flex',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+  dashboardBadge: {
+    padding: '6px 10px',
+    borderRadius: '999px',
+    backgroundColor: '#edf7f2',
+    border: '1px solid #cfe8dd',
+    color: '#2f6f56',
+    fontSize: '12px',
+    fontWeight: '700',
+  },
+  dashboardKpis: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+    gap: '12px',
+    marginTop: '14px',
+  },
+  dashboardKpiCard: {
+    padding: '14px',
+    borderRadius: '10px',
+    backgroundColor: '#fff',
+    border: '1px solid #e5ece8',
+  },
+  dashboardKpiLabel: {
+    fontSize: '12px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    color: '#6b7c87',
+    marginBottom: '8px',
+    fontWeight: '700',
+  },
+  dashboardKpiValue: {
+    fontSize: '28px',
+    lineHeight: 1,
+    color: '#2c3e50',
+    fontWeight: '800',
+  },
+  dashboardGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+    gap: '12px',
+    marginTop: '12px',
+  },
+  dashboardCard: {
+    padding: '14px',
+    borderRadius: '10px',
+    backgroundColor: '#fff',
+    border: '1px solid #e5ece8',
+    minHeight: '220px',
+  },
+  dashboardCardTitle: {
+    margin: 0,
+    fontSize: '15px',
+    color: '#2c3e50',
+  },
+  dashboardBars: {
+    marginTop: '14px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  dashboardBarRow: {
+    display: 'grid',
+    gridTemplateColumns: '110px 1fr 34px',
+    gap: '10px',
+    alignItems: 'center',
+  },
+  dashboardBarLabel: {
+    fontSize: '13px',
+    color: '#34495e',
+    fontWeight: '600',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  dashboardBarTrack: {
+    height: '12px',
+    borderRadius: '999px',
+    backgroundColor: '#edf2f3',
+    overflow: 'hidden',
+  },
+  dashboardBarFill: {
+    height: '100%',
+    borderRadius: '999px',
+    background: 'linear-gradient(90deg, #3ba57d, #6cc3a0)',
+  },
+  dashboardBarValue: {
+    fontSize: '13px',
+    fontWeight: '700',
+    color: '#2c3e50',
+    textAlign: 'right',
+  },
+  dashboardSnapshot: {
+    marginTop: '14px',
+    padding: '16px',
+    borderRadius: '10px',
+    background: 'linear-gradient(135deg, #edf9f4, #f8fbff)',
+    border: '1px solid #dbe9e2',
+    textAlign: 'center',
+  },
+  dashboardSnapshotValue: {
+    fontSize: '40px',
+    lineHeight: 1,
+    fontWeight: '800',
+    color: '#2f6f56',
+  },
+  dashboardSnapshotLabel: {
+    marginTop: '8px',
+    fontSize: '13px',
+    color: '#536572',
+    fontWeight: '600',
+  },
+  dashboardSnapshotSubtext: {
+    marginTop: '8px',
+    fontSize: '12px',
+    color: '#6d7d88',
+  },
+  dashboardMiniStats: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '10px',
+    marginTop: '12px',
+  },
+  dashboardMiniStat: {
+    padding: '10px 12px',
+    borderRadius: '10px',
+    backgroundColor: '#f9fbfc',
+    border: '1px solid #e5ece8',
+  },
+  dashboardMiniStatLabel: {
+    display: 'block',
+    fontSize: '12px',
+    color: '#6c7a89',
+    marginBottom: '4px',
+    fontWeight: '600',
+  },
+  dashboardMiniStatValue: {
+    fontSize: '22px',
+    fontWeight: '800',
+    color: '#2c3e50',
+  },
+  dashboardEmpty: {
+    marginTop: '14px',
+    color: '#6c7a89',
+    fontSize: '13px',
   },
 };
 

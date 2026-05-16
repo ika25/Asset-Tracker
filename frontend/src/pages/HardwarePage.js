@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   createHardware,
@@ -45,6 +45,27 @@ const parseNumericSortValue = (value) => {
   const match = String(value).replace(/,/g, '').match(/\d+(?:\.\d+)?/);
   return match ? Number(match[0]) : Number.NEGATIVE_INFINITY;
 };
+
+const daysUntil = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const target = new Date(parsed);
+  target.setHours(0, 0, 0, 0);
+
+  return Math.ceil((target - today) / (1000 * 60 * 60 * 24));
+};
+
+const normalizeStatus = (value) => String(value || '').trim().toLowerCase();
 
 const HardwarePage = () => {
   // Support deep links like /hardware?view=add.
@@ -278,6 +299,68 @@ const HardwarePage = () => {
     return 0;
   });
 
+  const dashboardMetrics = useMemo(() => {
+    const typeCounts = hardwareList.reduce((counts, hardware) => {
+      const key = String(hardware.type || 'Unspecified').trim() || 'Unspecified';
+      counts[key] = (counts[key] || 0) + 1;
+      return counts;
+    }, {});
+
+    const statusCounts = hardwareList.reduce((counts, hardware) => {
+      const key = normalizeStatus(hardware.status) || 'unknown';
+      counts[key] = (counts[key] || 0) + 1;
+      return counts;
+    }, { active: 0, inactive: 0, retired: 0, 'for sale': 0, unknown: 0 });
+
+    const expiringSoon = hardwareList.filter((hardware) => {
+      const remaining = daysUntil(hardware.warranty_expiry);
+      return remaining !== null && remaining >= 0 && remaining <= 60;
+    }).length;
+
+    const expired = hardwareList.filter((hardware) => {
+      const remaining = daysUntil(hardware.warranty_expiry);
+      return remaining !== null && remaining < 0;
+    }).length;
+
+    const totalCost = hardwareList.reduce((sum, hardware) => {
+      const parsed = parseNumericSortValue(hardware.cost);
+      return Number.isFinite(parsed) && parsed > 0 ? sum + parsed : sum;
+    }, 0);
+
+    const costEntries = hardwareList.filter((hardware) => parseNumericSortValue(hardware.cost) > 0).length;
+    const averageCost = costEntries > 0 ? totalCost / costEntries : 0;
+
+    const topTypes = Object.entries(typeCounts)
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 5);
+
+    return {
+      total: hardwareList.length,
+      expiringSoon,
+      expired,
+      averageCost,
+      topTypes,
+      statusCounts,
+    };
+  }, [hardwareList]);
+
+  const statusTotal = Math.max(
+    1,
+    dashboardMetrics.statusCounts.active
+      + dashboardMetrics.statusCounts.inactive
+      + dashboardMetrics.statusCounts.retired
+      + dashboardMetrics.statusCounts['for sale']
+      + dashboardMetrics.statusCounts.unknown,
+  );
+
+  const statusSegments = [
+    { key: 'active', label: 'Active', color: '#2ecc71', value: dashboardMetrics.statusCounts.active },
+    { key: 'inactive', label: 'Inactive', color: '#e67e22', value: dashboardMetrics.statusCounts.inactive },
+    { key: 'retired', label: 'Retired', color: '#e74c3c', value: dashboardMetrics.statusCounts.retired },
+    { key: 'for sale', label: 'For Sale', color: '#8e44ad', value: dashboardMetrics.statusCounts['for sale'] },
+    { key: 'unknown', label: 'Unknown', color: '#95a5a6', value: dashboardMetrics.statusCounts.unknown },
+  ];
+
   return (
     <div style={styles.container}>
       {/* MAIN CONTENT */}
@@ -369,6 +452,111 @@ const HardwarePage = () => {
           <div style={styles.section}>
             <h2>Hardware Inventory</h2>
             {error && <div style={styles.errorBanner}>{error}</div>}
+            <div style={styles.dashboardPanel}>
+              <div style={styles.dashboardHeaderRow}>
+                <div>
+                  <h3 style={styles.dashboardTitle}>Hardware Dashboard</h3>
+                  <div style={styles.dashboardHint}>Visualize hardware status, asset mix, and warranty coverage in one place.</div>
+                </div>
+                <div style={styles.dashboardBadgeRow}>
+                  <span style={styles.dashboardBadge}>Total: {dashboardMetrics.total}</span>
+                  <span style={styles.dashboardBadge}>Expiring Soon: {dashboardMetrics.expiringSoon}</span>
+                  <span style={styles.dashboardBadge}>Expired: {dashboardMetrics.expired}</span>
+                </div>
+              </div>
+
+              <div style={styles.dashboardKpis}>
+                <div style={styles.dashboardKpiCard}>
+                  <div style={styles.dashboardKpiLabel}>Total Hardware</div>
+                  <div style={styles.dashboardKpiValue}>{dashboardMetrics.total}</div>
+                </div>
+                <div style={styles.dashboardKpiCard}>
+                  <div style={styles.dashboardKpiLabel}>Expiring in 60 Days</div>
+                  <div style={{ ...styles.dashboardKpiValue, color: '#e67e22' }}>{dashboardMetrics.expiringSoon}</div>
+                </div>
+                <div style={styles.dashboardKpiCard}>
+                  <div style={styles.dashboardKpiLabel}>Expired Warranties</div>
+                  <div style={{ ...styles.dashboardKpiValue, color: '#e74c3c' }}>{dashboardMetrics.expired}</div>
+                </div>
+                <div style={styles.dashboardKpiCard}>
+                  <div style={styles.dashboardKpiLabel}>Avg. Cost</div>
+                  <div style={{ ...styles.dashboardKpiValue, color: '#3ba57d' }}>{dashboardMetrics.averageCost ? `$${Math.round(dashboardMetrics.averageCost).toLocaleString()}` : '-'}</div>
+                </div>
+              </div>
+
+              <div style={styles.dashboardGrid}>
+                <div style={styles.dashboardCard}>
+                  <h4 style={styles.dashboardCardTitle}>Status Breakdown</h4>
+                  <div style={styles.dashboardDonutWrap}>
+                    <div
+                      style={{
+                        ...styles.dashboardDonut,
+                        background: `conic-gradient(
+                          #2ecc71 0% ${(dashboardMetrics.statusCounts.active / statusTotal) * 100}%,
+                          #e67e22 ${(dashboardMetrics.statusCounts.active / statusTotal) * 100}% ${((dashboardMetrics.statusCounts.active + dashboardMetrics.statusCounts.inactive) / statusTotal) * 100}%,
+                          #e74c3c ${((dashboardMetrics.statusCounts.active + dashboardMetrics.statusCounts.inactive) / statusTotal) * 100}% ${((dashboardMetrics.statusCounts.active + dashboardMetrics.statusCounts.inactive + dashboardMetrics.statusCounts.retired) / statusTotal) * 100}%,
+                          #8e44ad ${((dashboardMetrics.statusCounts.active + dashboardMetrics.statusCounts.inactive + dashboardMetrics.statusCounts.retired) / statusTotal) * 100}% ${((dashboardMetrics.statusCounts.active + dashboardMetrics.statusCounts.inactive + dashboardMetrics.statusCounts.retired + dashboardMetrics.statusCounts['for sale']) / statusTotal) * 100}%,
+                          #95a5a6 ${((dashboardMetrics.statusCounts.active + dashboardMetrics.statusCounts.inactive + dashboardMetrics.statusCounts.retired + dashboardMetrics.statusCounts['for sale']) / statusTotal) * 100}% 100%
+                        )`,
+                      }}
+                    >
+                      <div style={styles.dashboardDonutInner}>{dashboardMetrics.total}</div>
+                    </div>
+                    <div style={styles.dashboardLegend}>
+                      {statusSegments.map((segment) => (
+                        <div key={segment.key} style={styles.dashboardLegendRow}>
+                          <span style={{ ...styles.dashboardLegendDot, backgroundColor: segment.color }} />
+                          <span>{segment.label}: {segment.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={styles.dashboardCard}>
+                  <h4 style={styles.dashboardCardTitle}>Top Hardware Types</h4>
+                  {dashboardMetrics.topTypes.length === 0 ? (
+                    <div style={styles.dashboardEmpty}>No hardware yet.</div>
+                  ) : (
+                    <div style={styles.dashboardBars}>
+                      {dashboardMetrics.topTypes.map(([type, count]) => {
+                        const width = `${Math.max(8, (count / Math.max(1, dashboardMetrics.total)) * 100)}%`;
+                        return (
+                          <div key={type} style={styles.dashboardBarRow}>
+                            <div style={styles.dashboardBarLabel}>{type}</div>
+                            <div style={styles.dashboardBarTrack}>
+                              <div style={{ ...styles.dashboardBarFill, width }} />
+                            </div>
+                            <div style={styles.dashboardBarValue}>{count}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div style={styles.dashboardCard}>
+                  <h4 style={styles.dashboardCardTitle}>Warranty Snapshot</h4>
+                  <div style={styles.dashboardSnapshot}>
+                    <div style={styles.dashboardSnapshotValue}>{dashboardMetrics.expiringSoon}</div>
+                    <div style={styles.dashboardSnapshotLabel}>warranties expiring within 60 days</div>
+                    <div style={styles.dashboardSnapshotSubtext}>
+                      {dashboardMetrics.expired} hardware items are already expired.
+                    </div>
+                  </div>
+                  <div style={styles.dashboardMiniStats}>
+                    <div style={styles.dashboardMiniStat}>
+                      <span style={styles.dashboardMiniStatLabel}>Tracked</span>
+                      <span style={styles.dashboardMiniStatValue}>{dashboardMetrics.total}</span>
+                    </div>
+                    <div style={styles.dashboardMiniStat}>
+                      <span style={styles.dashboardMiniStatLabel}>Avg. Cost</span>
+                      <span style={styles.dashboardMiniStatValue}>{dashboardMetrics.averageCost ? Math.round(dashboardMetrics.averageCost).toLocaleString() : '-'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div style={styles.filterBar}>
               <input
                 placeholder="Search name, model, manufacturer, location"
@@ -891,6 +1079,224 @@ const styles = {
     fontSize: '13px',
     fontWeight: '600',
     display: 'inline-block',
+  },
+  dashboardPanel: {
+    marginTop: '14px',
+    padding: '16px',
+    border: '1px solid #dde4e7',
+    borderRadius: '10px',
+    background: 'linear-gradient(180deg, #ffffff 0%, #f7fbf9 100%)',
+  },
+  dashboardHeaderRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '14px',
+    flexWrap: 'wrap',
+  },
+  dashboardTitle: {
+    margin: 0,
+    color: '#2c3e50',
+  },
+  dashboardHint: {
+    marginTop: '6px',
+    color: '#60727f',
+    fontSize: '13px',
+  },
+  dashboardBadgeRow: {
+    display: 'flex',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+  dashboardBadge: {
+    padding: '6px 10px',
+    borderRadius: '999px',
+    backgroundColor: '#edf7f2',
+    border: '1px solid #cfe8dd',
+    color: '#2f6f56',
+    fontSize: '12px',
+    fontWeight: '700',
+  },
+  dashboardKpis: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+    gap: '12px',
+    marginTop: '14px',
+  },
+  dashboardKpiCard: {
+    padding: '14px',
+    borderRadius: '10px',
+    backgroundColor: '#fff',
+    border: '1px solid #e5ece8',
+  },
+  dashboardKpiLabel: {
+    fontSize: '12px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    color: '#6b7c87',
+    marginBottom: '8px',
+    fontWeight: '700',
+  },
+  dashboardKpiValue: {
+    fontSize: '28px',
+    lineHeight: 1,
+    color: '#2c3e50',
+    fontWeight: '800',
+  },
+  dashboardGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+    gap: '12px',
+    marginTop: '12px',
+  },
+  dashboardCard: {
+    padding: '14px',
+    borderRadius: '10px',
+    backgroundColor: '#fff',
+    border: '1px solid #e5ece8',
+    minHeight: '220px',
+  },
+  dashboardCardTitle: {
+    margin: 0,
+    fontSize: '15px',
+    color: '#2c3e50',
+  },
+  dashboardDonutWrap: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '16px',
+    marginTop: '14px',
+    flexWrap: 'wrap',
+  },
+  dashboardDonut: {
+    width: '150px',
+    height: '150px',
+    borderRadius: '50%',
+    display: 'grid',
+    placeItems: 'center',
+    boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.04)',
+  },
+  dashboardDonutInner: {
+    width: '92px',
+    height: '92px',
+    borderRadius: '50%',
+    backgroundColor: '#fff',
+    display: 'grid',
+    placeItems: 'center',
+    fontSize: '28px',
+    fontWeight: '800',
+    color: '#2c3e50',
+    boxShadow: '0 4px 12px rgba(44,62,80,0.08)',
+  },
+  dashboardLegend: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    color: '#51626d',
+    fontSize: '13px',
+  },
+  dashboardLegendRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  dashboardLegendDot: {
+    width: '10px',
+    height: '10px',
+    borderRadius: '50%',
+    flexShrink: 0,
+  },
+  dashboardBars: {
+    marginTop: '14px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  dashboardBarRow: {
+    display: 'grid',
+    gridTemplateColumns: '110px 1fr 34px',
+    gap: '10px',
+    alignItems: 'center',
+  },
+  dashboardBarLabel: {
+    fontSize: '13px',
+    color: '#34495e',
+    fontWeight: '600',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  dashboardBarTrack: {
+    height: '12px',
+    borderRadius: '999px',
+    backgroundColor: '#edf2f3',
+    overflow: 'hidden',
+  },
+  dashboardBarFill: {
+    height: '100%',
+    borderRadius: '999px',
+    background: 'linear-gradient(90deg, #3ba57d, #6cc3a0)',
+  },
+  dashboardBarValue: {
+    fontSize: '13px',
+    fontWeight: '700',
+    color: '#2c3e50',
+    textAlign: 'right',
+  },
+  dashboardSnapshot: {
+    marginTop: '14px',
+    padding: '16px',
+    borderRadius: '10px',
+    background: 'linear-gradient(135deg, #edf9f4, #f8fbff)',
+    border: '1px solid #dbe9e2',
+    textAlign: 'center',
+  },
+  dashboardSnapshotValue: {
+    fontSize: '40px',
+    lineHeight: 1,
+    fontWeight: '800',
+    color: '#2f6f56',
+  },
+  dashboardSnapshotLabel: {
+    marginTop: '8px',
+    fontSize: '13px',
+    color: '#536572',
+    fontWeight: '600',
+  },
+  dashboardSnapshotSubtext: {
+    marginTop: '8px',
+    fontSize: '12px',
+    color: '#6d7d88',
+  },
+  dashboardMiniStats: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '10px',
+    marginTop: '12px',
+  },
+  dashboardMiniStat: {
+    padding: '10px 12px',
+    borderRadius: '10px',
+    backgroundColor: '#f9fbfc',
+    border: '1px solid #e5ece8',
+  },
+  dashboardMiniStatLabel: {
+    display: 'block',
+    fontSize: '12px',
+    color: '#6c7a89',
+    marginBottom: '4px',
+    fontWeight: '600',
+  },
+  dashboardMiniStatValue: {
+    fontSize: '22px',
+    fontWeight: '800',
+    color: '#2c3e50',
+  },
+  dashboardEmpty: {
+    marginTop: '14px',
+    color: '#6c7a89',
+    fontSize: '13px',
   },
 };
 
