@@ -1645,15 +1645,17 @@ const styles = {
     whiteSpace: 'nowrap',
   },
   dashboardBarTrack: {
-    height: '12px',
+    height: '14px',
     borderRadius: '999px',
-    backgroundColor: '#edf2f3',
+    backgroundColor: '#e8eef3',
     overflow: 'hidden',
+    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.06)',
   },
   dashboardBarFill: {
     height: '100%',
     borderRadius: '999px',
-    background: 'linear-gradient(90deg, #3ba57d, #6cc3a0)',
+    background: 'linear-gradient(90deg, #1abc9c, #16a085)',
+    boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.3)',
   },
   dashboardBarValue: {
     fontSize: '13px',
