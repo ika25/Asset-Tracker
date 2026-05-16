@@ -64,6 +64,7 @@ const SoftwarePage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [vendorFilter, setVendorFilter] = useState('All');
   const [licenseFilter, setLicenseFilter] = useState('All');
+  const [licenseHealthFilter, setLicenseHealthFilter] = useState('All');
   const [installedOnFilter, setInstalledOnFilter] = useState('All');
   const [sortField, setSortField] = useState('name');
   const [sortDirection, setSortDirection] = useState('asc');
@@ -160,6 +161,7 @@ const SoftwarePage = () => {
     setSearchTerm('');
     setVendorFilter('All');
     setLicenseFilter('All');
+    setLicenseHealthFilter('All');
     setInstalledOnFilter('All');
     setSortField('name');
     setSortDirection('asc');
@@ -255,6 +257,15 @@ const SoftwarePage = () => {
   });
 
   const filteredSoftware = softwareList.filter((software) => {
+    const remaining = daysUntil(software.license_expiry);
+    const healthStatus = remaining === null
+      ? 'No Expiry'
+      : remaining < 0
+      ? 'Expired'
+      : remaining <= 30
+      ? 'Expiring'
+      : 'Valid';
+
     const query = searchTerm.toLowerCase();
     // These are the fields people usually remember when searching for software.
     const matchesSearch =
@@ -263,8 +274,9 @@ const SoftwarePage = () => {
       (software.installed_on || '').toLowerCase().includes(query);
     const matchesVendor = vendorFilter === 'All' || software.vendor === vendorFilter;
     const matchesLicense = licenseFilter === 'All' || software.license_type === licenseFilter;
+    const matchesLicenseHealth = licenseHealthFilter === 'All' || healthStatus === licenseHealthFilter;
     const matchesInstalledOn = installedOnFilter === 'All' || software.installed_on === installedOnFilter;
-    return matchesSearch && matchesVendor && matchesLicense && matchesInstalledOn;
+    return matchesSearch && matchesVendor && matchesLicense && matchesLicenseHealth && matchesInstalledOn;
   });
 
   const sortedSoftware = [...filteredSoftware].sort((left, right) => {
@@ -287,6 +299,10 @@ const SoftwarePage = () => {
 
   const handleDashboardLicenseClick = (licenseType) => {
     setLicenseFilter((current) => (current === licenseType ? 'All' : licenseType));
+  };
+
+  const handleDashboardLicenseHealthClick = (health) => {
+    setLicenseHealthFilter((current) => (current === health ? 'All' : health));
   };
 
   const dashboardMetrics = useMemo(() => {
@@ -313,6 +329,11 @@ const SoftwarePage = () => {
     }).length;
 
     const installedEntries = softwareList.filter((software) => software.installed_on).length;
+    const noExpiry = softwareList.filter((software) => daysUntil(software.license_expiry) === null).length;
+    const valid = softwareList.filter((software) => {
+      const remaining = daysUntil(software.license_expiry);
+      return remaining !== null && remaining > 30;
+    }).length;
 
     const topVendors = Object.entries(vendorCounts)
       .sort((left, right) => right[1] - left[1])
@@ -327,10 +348,20 @@ const SoftwarePage = () => {
       installedEntries,
       expiringSoon,
       expired,
+      noExpiry,
+      valid,
       topVendors,
       topLicenseTypes,
     };
   }, [softwareList]);
+
+  const healthTotal = Math.max(1, dashboardMetrics.total);
+  const healthSegments = [
+    { key: 'valid', label: 'Valid', color: '#2ecc71', value: dashboardMetrics.valid },
+    { key: 'expiring', label: 'Expiring', color: '#e67e22', value: dashboardMetrics.expiringSoon },
+    { key: 'expired', label: 'Expired', color: '#e74c3c', value: dashboardMetrics.expired },
+    { key: 'no-expiry', label: 'No Expiry', color: '#95a5a6', value: dashboardMetrics.noExpiry },
+  ];
 
   return (
     <div style={styles.container}>
@@ -410,7 +441,7 @@ const SoftwarePage = () => {
                 <div>
                   <h3 style={styles.dashboardTitle}>Software Dashboard</h3>
                   <div style={styles.dashboardHint}>Track license health, vendor spread, and installation coverage at a glance.</div>
-                  <div style={styles.dashboardSubHint}>Click a bar to filter the table.</div>
+                  <div style={styles.dashboardSubHint}>Click bars or status labels to filter the table.</div>
                 </div>
                 <div style={styles.dashboardBadgeRow}>
                   <span style={styles.dashboardBadge}>Total: {dashboardMetrics.total}</span>
@@ -440,33 +471,36 @@ const SoftwarePage = () => {
 
               <div style={styles.dashboardGrid}>
                 <div style={styles.dashboardCard}>
-                  <h4 style={styles.dashboardCardTitle}>License Mix</h4>
-                  {dashboardMetrics.topLicenseTypes.length === 0 ? (
-                    <div style={styles.dashboardEmpty}>No software yet.</div>
-                  ) : (
-                    <div style={styles.dashboardBars}>
-                      {dashboardMetrics.topLicenseTypes.map(([type, count]) => {
-                        const width = `${Math.max(8, (count / Math.max(1, dashboardMetrics.total)) * 100)}%`;
-                        return (
-                          <button
-                            key={type}
-                            type="button"
-                            onClick={() => handleDashboardLicenseClick(type)}
-                            style={styles.dashboardBarButton}
-                            title={`Filter by ${type}`}
-                          >
-                            <div style={styles.dashboardBarRow}>
-                              <div style={styles.dashboardBarLabel}>{type}</div>
-                              <div style={styles.dashboardBarTrack}>
-                                <div style={{ ...styles.dashboardBarFill, width }} />
-                              </div>
-                              <div style={styles.dashboardBarValue}>{count}</div>
-                            </div>
-                          </button>
-                        );
-                      })}
+                  <h4 style={styles.dashboardCardTitle}>License Health Breakdown</h4>
+                  <div style={styles.dashboardDonutWrap}>
+                    <div
+                      style={{
+                        ...styles.dashboardDonut,
+                        background: `conic-gradient(
+                          #2ecc71 0% ${(dashboardMetrics.valid / healthTotal) * 100}%,
+                          #e67e22 ${(dashboardMetrics.valid / healthTotal) * 100}% ${((dashboardMetrics.valid + dashboardMetrics.expiringSoon) / healthTotal) * 100}%,
+                          #e74c3c ${((dashboardMetrics.valid + dashboardMetrics.expiringSoon) / healthTotal) * 100}% ${((dashboardMetrics.valid + dashboardMetrics.expiringSoon + dashboardMetrics.expired) / healthTotal) * 100}%,
+                          #95a5a6 ${((dashboardMetrics.valid + dashboardMetrics.expiringSoon + dashboardMetrics.expired) / healthTotal) * 100}% 100%
+                        )`,
+                      }}
+                    >
+                      <div style={styles.dashboardDonutInner}>{dashboardMetrics.total}</div>
                     </div>
-                  )}
+                    <div style={styles.dashboardLegend}>
+                      {healthSegments.map((segment) => (
+                        <button
+                          key={segment.key}
+                          type="button"
+                          onClick={() => handleDashboardLicenseHealthClick(segment.label)}
+                          style={styles.dashboardLegendButton}
+                          title={`Filter by ${segment.label}`}
+                        >
+                          <span style={{ ...styles.dashboardLegendDot, backgroundColor: segment.color }} />
+                          <span>{segment.label}: {segment.value}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
                 <div style={styles.dashboardCard}>
@@ -500,7 +534,34 @@ const SoftwarePage = () => {
                 </div>
 
                 <div style={styles.dashboardCard}>
-                  <h4 style={styles.dashboardCardTitle}>License Health</h4>
+                  <h4 style={styles.dashboardCardTitle}>License Mix</h4>
+                  {dashboardMetrics.topLicenseTypes.length === 0 ? (
+                    <div style={styles.dashboardEmpty}>No software yet.</div>
+                  ) : (
+                    <div style={styles.dashboardBars}>
+                      {dashboardMetrics.topLicenseTypes.map(([type, count]) => {
+                        const width = `${Math.max(8, (count / Math.max(1, dashboardMetrics.total)) * 100)}%`;
+                        return (
+                          <button
+                            key={type}
+                            type="button"
+                            onClick={() => handleDashboardLicenseClick(type)}
+                            style={styles.dashboardBarButton}
+                            title={`Filter by ${type}`}
+                          >
+                            <div style={styles.dashboardBarRow}>
+                              <div style={styles.dashboardBarLabel}>{type}</div>
+                              <div style={styles.dashboardBarTrack}>
+                                <div style={{ ...styles.dashboardBarFill, width }} />
+                              </div>
+                              <div style={styles.dashboardBarValue}>{count}</div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   <div style={styles.dashboardSnapshot}>
                     <div style={styles.dashboardSnapshotValue}>{dashboardMetrics.expiringSoon}</div>
                     <div style={styles.dashboardSnapshotLabel}>licenses expiring within 30 days</div>
@@ -1081,6 +1142,58 @@ const styles = {
     margin: 0,
     fontSize: '15px',
     color: '#2c3e50',
+  },
+  dashboardDonutWrap: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '16px',
+    marginTop: '14px',
+    flexWrap: 'wrap',
+  },
+  dashboardDonut: {
+    width: '150px',
+    height: '150px',
+    borderRadius: '50%',
+    display: 'grid',
+    placeItems: 'center',
+    boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.04)',
+  },
+  dashboardDonutInner: {
+    width: '92px',
+    height: '92px',
+    borderRadius: '50%',
+    backgroundColor: '#fff',
+    display: 'grid',
+    placeItems: 'center',
+    fontSize: '28px',
+    fontWeight: '800',
+    color: '#2c3e50',
+    boxShadow: '0 4px 12px rgba(44,62,80,0.08)',
+  },
+  dashboardLegend: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    color: '#51626d',
+    fontSize: '13px',
+  },
+  dashboardLegendButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: 0,
+    border: 'none',
+    background: 'transparent',
+    cursor: 'pointer',
+    color: 'inherit',
+    textAlign: 'left',
+  },
+  dashboardLegendDot: {
+    width: '10px',
+    height: '10px',
+    borderRadius: '50%',
+    flexShrink: 0,
   },
   dashboardBars: {
     marginTop: '14px',

@@ -74,6 +74,10 @@ const Dashboard = () => {
       return 'inactive';
     }
 
+    if (status === 'retired') {
+      return 'retired';
+    }
+
     return 'unknown';
   }, []);
 
@@ -132,7 +136,8 @@ const Dashboard = () => {
 
     const activeDevices = devices.filter((d) => getNormalizedStatus(d.status) === 'active').length;
     const inactiveDevices = devices.filter((d) => getNormalizedStatus(d.status) === 'inactive').length;
-    const unknownDevices = devices.length - activeDevices - inactiveDevices;
+    const retiredDevices = devices.filter((d) => getNormalizedStatus(d.status) === 'retired').length;
+    const unknownDevices = devices.length - activeDevices - inactiveDevices - retiredDevices;
 
     const licensesExpiringSoon = software.filter((s) => isExpiringInDays(s.license_expiry, 30)).length;
     const warrantiesExpiringSoon = [
@@ -246,10 +251,53 @@ const Dashboard = () => {
     const documentedHardware = hardware.filter((item) => item.purchase_date || item.warranty_expiry).length;
     const recentActivityCount = recentDevices.length + recentHardware.length + recentSoftware.length;
 
+    const softwareHealth = software.reduce((counts, item) => {
+      const remaining = daysUntil(item.license_expiry);
+
+      if (remaining === null) {
+        counts.noExpiry += 1;
+      } else if (remaining < 0) {
+        counts.expired += 1;
+      } else if (remaining <= 30) {
+        counts.expiring += 1;
+      } else {
+        counts.valid += 1;
+      }
+
+      return counts;
+    }, {
+      valid: 0,
+      expiring: 0,
+      expired: 0,
+      noExpiry: 0,
+    });
+
+    const hardwareHealth = hardware.reduce((counts, item) => {
+      const remaining = daysUntil(item.warranty_expiry);
+
+      if (remaining === null) {
+        counts.noWarranty += 1;
+      } else if (remaining < 0) {
+        counts.expired += 1;
+      } else if (remaining <= 60) {
+        counts.expiring += 1;
+      } else {
+        counts.valid += 1;
+      }
+
+      return counts;
+    }, {
+      valid: 0,
+      expiring: 0,
+      expired: 0,
+      noWarranty: 0,
+    });
+
     return {
       totalDevices: devices.length,
       activeDevices,
       inactiveDevices,
+      retiredDevices,
       unknownDevices,
       hardwareCount: hardware.length,
       softwareCount: software.length,
@@ -264,14 +312,17 @@ const Dashboard = () => {
       latestRecords,
       latestActivity,
       topCategories,
+      softwareHealth,
+      hardwareHealth,
     };
   }, [daysUntil, devices, formatDateLabel, getNormalizedStatus, getRecentWindowDays, hardware, isExpiringInDays, isWithinWindow, software, timeRange]);
 
-  const totalForChart = Math.max(1, metrics.activeDevices + metrics.inactiveDevices + metrics.unknownDevices);
+  const totalForChart = Math.max(1, metrics.activeDevices + metrics.inactiveDevices + metrics.retiredDevices + metrics.unknownDevices);
   const activePct = (metrics.activeDevices / totalForChart) * 100;
   const inactivePct = (metrics.inactiveDevices / totalForChart) * 100;
-  const unknownPct = 100 - activePct - inactivePct;
   const attentionCount = metrics.attentionItems.length;
+  const softwareHealthTotal = Math.max(1, metrics.softwareHealth.valid + metrics.softwareHealth.expiring + metrics.softwareHealth.expired + metrics.softwareHealth.noExpiry);
+  const hardwareHealthTotal = Math.max(1, metrics.hardwareHealth.valid + metrics.hardwareHealth.expiring + metrics.hardwareHealth.expired + metrics.hardwareHealth.noWarranty);
 
   if (loading) {
     return <div style={styles.page}><div style={styles.loading}>Loading dashboard...</div></div>;
@@ -337,32 +388,84 @@ const Dashboard = () => {
       <div style={styles.mainGrid}>
         <div style={styles.card}>
           <div style={styles.cardHeaderRow}>
-            <h3 style={styles.cardTitle}>Status Breakdown</h3>
-            <span style={styles.cardBadge}>Live health</span>
+            <h3 style={styles.cardTitle}>Asset Health Donuts</h3>
+            <span style={styles.cardBadge}>Unified view</span>
           </div>
-          <div style={styles.statusWrap}>
-            <div
-              style={{
-                ...styles.donut,
-                background: `conic-gradient(#2ecc71 0% ${activePct}%, #e74c3c ${activePct}% ${activePct + inactivePct}%, #95a5a6 ${activePct + inactivePct}% 100%)`,
-              }}
-            >
-              <div style={styles.donutInner}>{metrics.totalDevices}</div>
+          <div style={styles.healthDonutGrid}>
+            <div style={styles.healthDonutCard}>
+              <div style={styles.healthDonutTitle}>Device Status</div>
+              <div style={styles.healthDonutRow}>
+                <div
+                  style={{
+                    ...styles.smallDonut,
+                    background: `conic-gradient(
+                      #2ecc71 0% ${(metrics.activeDevices / totalForChart) * 100}%,
+                      #e67e22 ${(metrics.activeDevices / totalForChart) * 100}% ${((metrics.activeDevices + metrics.inactiveDevices) / totalForChart) * 100}%,
+                      #e74c3c ${((metrics.activeDevices + metrics.inactiveDevices) / totalForChart) * 100}% ${((metrics.activeDevices + metrics.inactiveDevices + metrics.retiredDevices) / totalForChart) * 100}%,
+                      #95a5a6 ${((metrics.activeDevices + metrics.inactiveDevices + metrics.retiredDevices) / totalForChart) * 100}% 100%
+                    )`,
+                  }}
+                >
+                  <div style={styles.smallDonutInner}>{metrics.totalDevices}</div>
+                </div>
+                <div style={styles.legend}>
+                  <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#2ecc71' }} /> Active: {metrics.activeDevices}</div>
+                  <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#e67e22' }} /> Inactive: {metrics.inactiveDevices}</div>
+                  <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#e74c3c' }} /> Retired: {metrics.retiredDevices}</div>
+                  <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#95a5a6' }} /> Unknown: {metrics.unknownDevices}</div>
+                </div>
+              </div>
             </div>
-            <div style={styles.legend}>
-              <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#2ecc71' }} /> Active: {metrics.activeDevices}</div>
-              <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#e74c3c' }} /> Inactive: {metrics.inactiveDevices}</div>
-              <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#95a5a6' }} /> Unknown: {metrics.unknownDevices}</div>
-              <div style={styles.legendHint}>Unknown includes devices without active/inactive status.</div>
+
+            <div style={styles.healthDonutCard}>
+              <div style={styles.healthDonutTitle}>Software Licenses</div>
+              <div style={styles.healthDonutRow}>
+                <div
+                  style={{
+                    ...styles.smallDonut,
+                    background: `conic-gradient(
+                      #2ecc71 0% ${(metrics.softwareHealth.valid / softwareHealthTotal) * 100}%,
+                      #e67e22 ${(metrics.softwareHealth.valid / softwareHealthTotal) * 100}% ${((metrics.softwareHealth.valid + metrics.softwareHealth.expiring) / softwareHealthTotal) * 100}%,
+                      #e74c3c ${((metrics.softwareHealth.valid + metrics.softwareHealth.expiring) / softwareHealthTotal) * 100}% ${((metrics.softwareHealth.valid + metrics.softwareHealth.expiring + metrics.softwareHealth.expired) / softwareHealthTotal) * 100}%,
+                      #95a5a6 ${((metrics.softwareHealth.valid + metrics.softwareHealth.expiring + metrics.softwareHealth.expired) / softwareHealthTotal) * 100}% 100%
+                    )`,
+                  }}
+                >
+                  <div style={styles.smallDonutInner}>{metrics.softwareCount}</div>
+                </div>
+                <div style={styles.legend}>
+                  <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#2ecc71' }} /> Valid: {metrics.softwareHealth.valid}</div>
+                  <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#e67e22' }} /> Expiring: {metrics.softwareHealth.expiring}</div>
+                  <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#e74c3c' }} /> Expired: {metrics.softwareHealth.expired}</div>
+                  <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#95a5a6' }} /> No Expiry: {metrics.softwareHealth.noExpiry}</div>
+                </div>
+              </div>
             </div>
-          </div>
-          <div style={styles.progressBars}>
-            <div style={styles.progressLabel}>Active {Math.round(activePct)}%</div>
-            <div style={styles.progressTrack}><div style={{ ...styles.progressFill, width: `${activePct}%`, backgroundColor: '#2ecc71' }} /></div>
-            <div style={styles.progressLabel}>Inactive {Math.round(inactivePct)}%</div>
-            <div style={styles.progressTrack}><div style={{ ...styles.progressFill, width: `${inactivePct}%`, backgroundColor: '#e74c3c' }} /></div>
-            <div style={styles.progressLabel}>Unknown {Math.round(unknownPct)}%</div>
-            <div style={styles.progressTrack}><div style={{ ...styles.progressFill, width: `${unknownPct}%`, backgroundColor: '#95a5a6' }} /></div>
+
+            <div style={styles.healthDonutCard}>
+              <div style={styles.healthDonutTitle}>Hardware Warranties</div>
+              <div style={styles.healthDonutRow}>
+                <div
+                  style={{
+                    ...styles.smallDonut,
+                    background: `conic-gradient(
+                      #2ecc71 0% ${(metrics.hardwareHealth.valid / hardwareHealthTotal) * 100}%,
+                      #e67e22 ${(metrics.hardwareHealth.valid / hardwareHealthTotal) * 100}% ${((metrics.hardwareHealth.valid + metrics.hardwareHealth.expiring) / hardwareHealthTotal) * 100}%,
+                      #e74c3c ${((metrics.hardwareHealth.valid + metrics.hardwareHealth.expiring) / hardwareHealthTotal) * 100}% ${((metrics.hardwareHealth.valid + metrics.hardwareHealth.expiring + metrics.hardwareHealth.expired) / hardwareHealthTotal) * 100}%,
+                      #95a5a6 ${((metrics.hardwareHealth.valid + metrics.hardwareHealth.expiring + metrics.hardwareHealth.expired) / hardwareHealthTotal) * 100}% 100%
+                    )`,
+                  }}
+                >
+                  <div style={styles.smallDonutInner}>{metrics.hardwareCount}</div>
+                </div>
+                <div style={styles.legend}>
+                  <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#2ecc71' }} /> Valid: {metrics.hardwareHealth.valid}</div>
+                  <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#e67e22' }} /> Expiring: {metrics.hardwareHealth.expiring}</div>
+                  <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#e74c3c' }} /> Expired: {metrics.hardwareHealth.expired}</div>
+                  <div style={styles.legendRow}><span style={{ ...styles.legendDot, backgroundColor: '#95a5a6' }} /> No Warranty: {metrics.hardwareHealth.noWarranty}</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -439,32 +542,6 @@ const Dashboard = () => {
             </div>
           )}
         </div>
-      </div>
-
-      <div style={styles.card}>
-        <div style={styles.cardHeaderRow}>
-          <h3 style={styles.cardTitle}>Recent Activity</h3>
-          <span style={styles.cardBadge}>{metrics.recentWindowLabel}</span>
-        </div>
-        {metrics.latestActivity.length === 0 ? (
-          <div style={styles.empty}>No recent activity found in this window.</div>
-        ) : (
-          <div style={styles.activityList}>
-            {metrics.latestActivity.map((item) => (
-              <div key={item.id} style={styles.activityItem}>
-                <div style={styles.activityIcon}>{item.kind.slice(0, 1)}</div>
-                <div style={styles.activityBody}>
-                  <div style={styles.activityTopRow}>
-                    <span style={styles.listType}>{item.kind}</span>
-                    <span style={styles.activityStamp}>{item.stamp}</span>
-                  </div>
-                  <div style={styles.listName}>{item.name}</div>
-                  <div style={styles.listDetail}>{item.detail}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
       <div style={styles.card}>
@@ -884,6 +961,50 @@ const styles = {
     textAlign: 'right',
     color: '#1f2d3d',
     fontWeight: '700',
+  },
+  healthDonutGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+    gap: '12px',
+  },
+  healthDonutCard: {
+    border: '1px solid #e9edf2',
+    borderRadius: '12px',
+    padding: '12px',
+    background: 'linear-gradient(180deg, #fbfdff 0%, #ffffff 100%)',
+  },
+  healthDonutTitle: {
+    color: '#1f2d3d',
+    fontSize: '14px',
+    fontWeight: '700',
+    marginBottom: '10px',
+  },
+  healthDonutRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '14px',
+    flexWrap: 'wrap',
+  },
+  smallDonut: {
+    width: '120px',
+    height: '120px',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  smallDonutInner: {
+    width: '70px',
+    height: '70px',
+    borderRadius: '50%',
+    backgroundColor: '#fff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: '700',
+    color: '#1f2d3d',
+    border: '1px solid #e9edf2',
   },
   activityList: {
     display: 'grid',
