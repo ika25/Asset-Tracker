@@ -8,6 +8,7 @@ import pingRoutes from './routes/pingRoutes.js';
 import deviceSoftwareRoutes from './routes/deviceSoftwareRoutes.js';
 import softwareRoutes from './routes/softwareRoutes.js';
 import hardwareRoutes from './routes/hardwareRoutes.js';
+import portRoutes from './routes/portRoutes.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -27,6 +28,7 @@ app.use('/api/ping', pingRoutes);
 app.use('/api/device-software', deviceSoftwareRoutes);
 app.use('/api/software', softwareRoutes);
 app.use('/api/hardware', hardwareRoutes);
+app.use('/api', portRoutes);
 
 // Keep these last so unmatched routes and thrown errors are handled consistently.
 app.use(notFoundHandler);

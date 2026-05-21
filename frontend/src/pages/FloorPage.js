@@ -1,11 +1,12 @@
 // Import React and hooks
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // Konva canvas components
 import { Stage, Layer, Group, Image, Text, Line, Circle, Rect } from 'react-konva';
 
 // API functions
 import { createDevice, getDevices, updateDevice } from '../api/deviceApi';
+import { getDevicePorts } from '../api/portApi';
 import { getApiErrorMessage } from '../api/client';
 import { useCrudResource } from '../hooks/useCrudResource';
 import {
@@ -53,6 +54,18 @@ const EMPTY_DEVICE = {
   location: '',
   status: 'Active',
 };
+
+const isSwitchDevice = (device) => String(device?.type || '').toLowerCase().includes('switch');
+const hasMappedPosition = (device) => (
+  device?.x_position !== null
+  && device?.x_position !== undefined
+  && device?.x_position !== ''
+  && device?.y_position !== null
+  && device?.y_position !== undefined
+  && device?.y_position !== ''
+  && Number.isFinite(Number(device.x_position))
+  && Number.isFinite(Number(device.y_position))
+);
 
 // Important: x/y positions are saved in logical map coordinates (BASE_MAP_* scale),
 // not screen pixels. This keeps placement stable across zoom levels and screen sizes.
@@ -110,6 +123,8 @@ const FloorPage = () => {
   const [zoneDrawCurrent, setZoneDrawCurrent] = useState(null);
   const [showZonePanel, setShowZonePanel] = useState(false);
   const [nextZoneColorIndex, setNextZoneColorIndex] = useState(0);
+  const [switchPortTopology, setSwitchPortTopology] = useState([]);
+  const [topologyReloadToken, setTopologyReloadToken] = useState(0);
 
   // Eraser
   const [isErasing, setIsErasing] = useState(false);
@@ -142,6 +157,10 @@ const FloorPage = () => {
   const mapScaleX = mapSize.width / BASE_MAP_WIDTH;
   const mapScaleY = mapSize.height / BASE_MAP_HEIGHT;
   const newDeviceFields = getVisibleDeviceFields(newDevice);
+  const switchDeviceIdsKey = useMemo(
+    () => devices.filter(isSwitchDevice).map((device) => device.id).sort((left, right) => left - right).join(','),
+    [devices]
+  );
 
   const detectContentBounds = (img) => {
     try {
@@ -350,6 +369,42 @@ const FloorPage = () => {
     fitToView();
     hasAutoFittedRef.current = true;
   }, [floorImage, fitToView]);
+
+  useEffect(() => {
+    if (!switchDeviceIdsKey) {
+      setSwitchPortTopology([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const loadTopology = async () => {
+      try {
+        const switchIds = switchDeviceIdsKey.split(',').filter(Boolean).map(Number);
+        const responses = await Promise.all(switchIds.map((switchId) => getDevicePorts(switchId)));
+
+        if (cancelled) {
+          return;
+        }
+
+        setSwitchPortTopology(
+          responses
+            .flatMap((response) => response.data || [])
+            .filter((port) => port.connection_id && (port.connected_device_id || port.remote_switch_id))
+        );
+      } catch (err) {
+        if (!cancelled) {
+          setError(getApiErrorMessage(err, 'Failed to load network topology.'));
+        }
+      }
+    };
+
+    loadTopology();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setError, switchDeviceIdsKey, topologyReloadToken]);
 
   // =========================
   // HANDLE DRAG
@@ -912,7 +967,7 @@ const FloorPage = () => {
   const searchQuery = searchFilter.trim().toLowerCase();
   const isSearchActive = searchQuery.length > 0;
 
-  const matchesSearch = (device) => {
+  const matchesSearch = useCallback((device) => {
     if (!isSearchActive) return true;
 
     return (
@@ -923,7 +978,7 @@ const FloorPage = () => {
       (device.user_name || '').toLowerCase().includes(searchQuery) ||
       (device.location || '').toLowerCase().includes(searchQuery)
     );
-  };
+  }, [isSearchActive, searchQuery]);
 
   const filteredDevices = devices.filter((device) => {
     // Type filter
@@ -938,6 +993,42 @@ const FloorPage = () => {
   });
 
   const highlightedMatches = filteredDevices.filter((device) => matchesSearch(device)).length;
+  const filteredDeviceMap = useMemo(
+    () => new Map(filteredDevices.map((device) => [device.id, device])),
+    [filteredDevices]
+  );
+  const visibleNetworkLinks = useMemo(() => {
+    const seenConnectionIds = new Set();
+
+    return switchPortTopology.reduce((links, port) => {
+      if (!port.connection_id || seenConnectionIds.has(port.connection_id)) {
+        return links;
+      }
+
+      const sourceDevice = filteredDeviceMap.get(port.device_id);
+      const targetDevice = filteredDeviceMap.get(port.connected_device_id || port.remote_switch_id);
+
+      if (!sourceDevice || !targetDevice || !hasMappedPosition(sourceDevice) || !hasMappedPosition(targetDevice)) {
+        return links;
+      }
+
+      seenConnectionIds.add(port.connection_id);
+
+      const sourceMatches = matchesSearch(sourceDevice);
+      const targetMatches = matchesSearch(targetDevice);
+      links.push({
+        id: port.connection_id,
+        sourceX: Number(sourceDevice.x_position) * mapScaleX,
+        sourceY: Number(sourceDevice.y_position) * mapScaleY,
+        targetX: Number(targetDevice.x_position) * mapScaleX,
+        targetY: Number(targetDevice.y_position) * mapScaleY,
+        isUplink: Boolean(port.remote_switch_id),
+        cableLabel: port.cable_label || '',
+        dimmed: isSearchActive && !sourceMatches && !targetMatches,
+      });
+      return links;
+    }, []);
+  }, [filteredDeviceMap, isSearchActive, mapScaleX, mapScaleY, matchesSearch, switchPortTopology]);
 
   // Get unique device types
   const deviceTypes = [...new Set([...DEVICE_TYPE_OPTIONS, ...devices.map((d) => d.type).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
@@ -1361,6 +1452,21 @@ const FloorPage = () => {
                 );
               })()}
 
+              {/* Network topology lines */}
+              {visibleNetworkLinks.map((link) => (
+                <Line
+                  key={`network-link-${link.id}`}
+                  points={[link.sourceX, link.sourceY, link.targetX, link.targetY]}
+                  stroke={link.isUplink ? '#355c7d' : '#3ba57d'}
+                  strokeWidth={link.isUplink ? 3 : 2.5}
+                  opacity={link.dimmed ? 0.16 : 0.72}
+                  dash={link.isUplink ? [10, 6] : undefined}
+                  lineCap="round"
+                  lineJoin="round"
+                  listening={false}
+                />
+              ))}
+
               {/* Devices */}
               {filteredDevices.filter((device) => {
                 const hasX = device.x_position !== null && device.x_position !== undefined && device.x_position !== '';
@@ -1390,14 +1496,21 @@ const FloorPage = () => {
                     ? '#3498db'
                     : '#95a5a6';
 
+                const handleSelectDevice = (event) => {
+                  event.cancelBubble = true;
+                  setSelectedDevice(device);
+                };
+
                 return (
                   <Group
                     key={device.id}
+                    name="device-node"
                     x={x}
                     y={y}
                     draggable
                     opacity={isSearchActive && !isSearchMatch ? 0.28 : 1}
-                    onClick={() => setSelectedDevice(device)}
+                    onClick={handleSelectDevice}
+                    onTap={handleSelectDevice}
                     onMouseEnter={(e) => {
                       setHoveredDevice(device);
                       updateTooltipPosition(e);
@@ -1702,6 +1815,7 @@ const FloorPage = () => {
           device={selectedDevice}
           onClose={() => setSelectedDevice(null)}
           refreshDevices={refresh}
+          onPortsChanged={() => setTopologyReloadToken((current) => current + 1)}
         />
       )}
 

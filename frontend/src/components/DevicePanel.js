@@ -1,5 +1,14 @@
-import React, { useState } from 'react';
-import { updateDevice, deleteDevice } from '../api/deviceApi';
+import React, { useEffect, useState } from 'react';
+import { getApiErrorMessage } from '../api/client';
+import { getDevices, updateDevice, deleteDevice } from '../api/deviceApi';
+import {
+  createDevicePort,
+  deleteSwitchPort,
+  disconnectPort,
+  getDevicePorts,
+  updateSwitchPort,
+  upsertPortConnection,
+} from '../api/portApi';
 import {
   DEVICE_STATUS_OPTIONS,
   getCategoryLabel,
@@ -8,15 +17,110 @@ import {
 } from '../utils/deviceFormConfig';
 
 const ICON_OPTIONS = ['💻', '🖥️', '🖨️', '🛜', '📡', '🗄️', '📱', '📷'];
+const PORT_TYPE_OPTIONS = ['copper', 'fiber', 'sfp'];
+const EMPTY_PORT = {
+  id: null,
+  port_number: '',
+  label: '',
+  speed: '',
+  vlan_id: '',
+  port_type: 'copper',
+  status: 'Active',
+  connected_device_id: '',
+  remote_port_id: '',
+  cable_label: '',
+  notes: '',
+  connected_device_name: '',
+  connected_device_location: '',
+  remote_switch_name: '',
+  remote_port_number: '',
+};
 
-const DevicePanel = ({ device, onClose, refreshDevices }) => {
+const isSwitchDevice = (device) => String(device?.type || '').toLowerCase().includes('switch');
+const normalizePortDraft = (port) => ({
+  id: port?.id ?? null,
+  port_number: port?.port_number || '',
+  label: port?.label || '',
+  speed: port?.speed || '',
+  vlan_id: port?.vlan_id ?? '',
+  port_type: port?.port_type || 'copper',
+  status: port?.status || 'Active',
+  connected_device_id: port?.connected_device_id ? String(port.connected_device_id) : '',
+  remote_port_id: port?.remote_port_id ? String(port.remote_port_id) : '',
+  cable_label: port?.cable_label || '',
+  notes: port?.notes || '',
+  connected_device_name: port?.connected_device_name || '',
+  connected_device_location: port?.connected_device_location || '',
+  remote_switch_name: port?.remote_switch_name || '',
+  remote_port_number: port?.remote_port_number || '',
+});
+const buildEmptyPort = () => ({ ...EMPTY_PORT });
+
+const DevicePanel = ({ device, onClose, refreshDevices, onPortsChanged }) => {
   // Form state
   const [formData, setFormData] = useState(device);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [ports, setPorts] = useState([]);
+  const [availableDevices, setAvailableDevices] = useState([]);
+  const [portsLoading, setPortsLoading] = useState(false);
+  const [portsSavingId, setPortsSavingId] = useState(null);
   const visibleFields = getVisibleDeviceFields(formData);
+  const switchDevice = isSwitchDevice(formData);
+
+  useEffect(() => {
+    setFormData(device);
+    setError('');
+    setSuccess('');
+    setShowDeleteConfirm(false);
+    setPorts([]);
+    setAvailableDevices([]);
+    setPortsLoading(false);
+    setPortsSavingId(null);
+  }, [device]);
+
+  useEffect(() => {
+    if (!switchDevice || !device?.id) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const loadPortContext = async () => {
+      setPortsLoading(true);
+      setError('');
+
+      try {
+        const [portsResponse, devicesResponse] = await Promise.all([
+          getDevicePorts(device.id),
+          getDevices(),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        setPorts((portsResponse.data || []).map(normalizePortDraft));
+        setAvailableDevices((devicesResponse.data || []).filter((candidate) => candidate.id !== device.id));
+      } catch (err) {
+        if (!cancelled) {
+          setError(getApiErrorMessage(err, 'Failed to load switch ports.'));
+        }
+      } finally {
+        if (!cancelled) {
+          setPortsLoading(false);
+        }
+      }
+    };
+
+    loadPortContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [device?.id, switchDevice]);
 
   // Handle input
   const handleChange = (e) => {
@@ -25,6 +129,103 @@ const DevicePanel = ({ device, onClose, refreshDevices }) => {
       [e.target.name]: e.target.value,
     });
     setError('');
+  };
+
+  const handlePortChange = (index, field, value) => {
+    setPorts((currentPorts) => currentPorts.map((port, portIndex) => (
+      portIndex === index
+        ? {
+          ...port,
+          [field]: value,
+        }
+        : port
+    )));
+    setError('');
+    setSuccess('');
+  };
+
+  const handleAddPort = () => {
+    setPorts((currentPorts) => [...currentPorts, buildEmptyPort()]);
+    setSuccess('');
+    setError('');
+  };
+
+  const reloadPorts = async () => {
+    const response = await getDevicePorts(device.id);
+    setPorts((response.data || []).map(normalizePortDraft));
+  };
+
+  const handleSavePort = async (port, index) => {
+    const draftId = port.id || `new-${index}`;
+    const trimmedPortNumber = String(port.port_number || '').trim();
+
+    if (!trimmedPortNumber) {
+      setError('Port number is required.');
+      return;
+    }
+
+    setPortsSavingId(draftId);
+    setError('');
+    setSuccess('');
+
+    try {
+      const payload = {
+        port_number: trimmedPortNumber,
+        label: port.label || '',
+        speed: port.speed || '',
+        vlan_id: port.vlan_id === '' ? null : Number(port.vlan_id),
+        port_type: port.port_type || 'copper',
+        status: port.status || 'Active',
+      };
+
+      const portResponse = port.id
+        ? await updateSwitchPort(port.id, payload)
+        : await createDevicePort(device.id, payload);
+
+      const savedPortId = portResponse.data.id;
+      const connectionPayload = {
+        connected_device_id: port.connected_device_id ? Number(port.connected_device_id) : null,
+        remote_port_id: port.remote_port_id ? Number(port.remote_port_id) : null,
+        cable_label: port.cable_label || '',
+        notes: port.notes || '',
+      };
+
+      if (connectionPayload.connected_device_id || connectionPayload.remote_port_id) {
+        await upsertPortConnection(savedPortId, connectionPayload);
+      } else if (port.id && (port.connected_device_name || port.remote_switch_name || port.remote_port_number)) {
+        await disconnectPort(savedPortId);
+      }
+
+      await reloadPorts();
+      onPortsChanged?.();
+      setSuccess(`Saved port ${trimmedPortNumber}.`);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to save port.'));
+    } finally {
+      setPortsSavingId(null);
+    }
+  };
+
+  const handleDeletePort = async (port, index) => {
+    if (!port.id) {
+      setPorts((currentPorts) => currentPorts.filter((_, portIndex) => portIndex !== index));
+      return;
+    }
+
+    setPortsSavingId(port.id);
+    setError('');
+    setSuccess('');
+
+    try {
+      await deleteSwitchPort(port.id);
+      await reloadPorts();
+      onPortsChanged?.();
+      setSuccess(`Deleted port ${port.port_number}.`);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to delete port.'));
+    } finally {
+      setPortsSavingId(null);
+    }
   };
 
   // Save changes
@@ -293,6 +494,197 @@ const DevicePanel = ({ device, onClose, refreshDevices }) => {
               </select>
             </div>
 
+            {switchDevice && (
+              <div style={styles.portSection}>
+                <div style={styles.portSectionHeader}>
+                  <div>
+                    <div style={styles.portSectionTitle}>Switch Ports</div>
+                    <div style={styles.portSectionHint}>Track which devices or uplinks are attached to each physical port.</div>
+                  </div>
+                  <button
+                    onClick={handleAddPort}
+                    disabled={loading || portsLoading}
+                    style={{
+                      ...styles.secondaryButton,
+                      ...((loading || portsLoading) ? styles.buttonDisabled : {}),
+                    }}
+                  >
+                    + Add Port
+                  </button>
+                </div>
+
+                {portsLoading ? (
+                  <div style={styles.helperText}>Loading ports...</div>
+                ) : ports.length === 0 ? (
+                  <div style={styles.helperText}>No ports tracked yet.</div>
+                ) : (
+                  ports.map((port, index) => {
+                    const savingThisPort = portsSavingId === (port.id || `new-${index}`);
+
+                    return (
+                      <div key={port.id || `draft-${index}`} style={styles.portCard}>
+                        <div style={styles.portCardHeader}>
+                          <strong>{port.port_number || `New Port ${index + 1}`}</strong>
+                          <span style={styles.portSummaryText}>
+                            {port.connected_device_name
+                              ? `${port.connected_device_name}${port.connected_device_location ? ` • ${port.connected_device_location}` : ''}`
+                              : port.remote_switch_name
+                                ? `${port.remote_switch_name} / ${port.remote_port_number || 'remote port'}`
+                                : 'Unassigned'}
+                          </span>
+                        </div>
+
+                        <div style={styles.portGrid}>
+                          <div style={styles.formGroup}>
+                            <label style={styles.label}>Port Number</label>
+                            <input
+                              value={port.port_number}
+                              onChange={(e) => handlePortChange(index, 'port_number', e.target.value)}
+                              disabled={loading || savingThisPort}
+                              style={styles.input}
+                            />
+                          </div>
+
+                          <div style={styles.formGroup}>
+                            <label style={styles.label}>Label</label>
+                            <input
+                              value={port.label}
+                              onChange={(e) => handlePortChange(index, 'label', e.target.value)}
+                              disabled={loading || savingThisPort}
+                              style={styles.input}
+                            />
+                          </div>
+
+                          <div style={styles.formGroup}>
+                            <label style={styles.label}>Speed</label>
+                            <input
+                              value={port.speed}
+                              onChange={(e) => handlePortChange(index, 'speed', e.target.value)}
+                              disabled={loading || savingThisPort}
+                              style={styles.input}
+                            />
+                          </div>
+
+                          <div style={styles.formGroup}>
+                            <label style={styles.label}>VLAN</label>
+                            <input
+                              value={port.vlan_id}
+                              onChange={(e) => handlePortChange(index, 'vlan_id', e.target.value)}
+                              disabled={loading || savingThisPort}
+                              style={styles.input}
+                              inputMode="numeric"
+                            />
+                          </div>
+
+                          <div style={styles.formGroup}>
+                            <label style={styles.label}>Port Type</label>
+                            <select
+                              value={port.port_type}
+                              onChange={(e) => handlePortChange(index, 'port_type', e.target.value)}
+                              disabled={loading || savingThisPort}
+                              style={styles.input}
+                            >
+                              {PORT_TYPE_OPTIONS.map((portType) => (
+                                <option key={portType} value={portType}>{portType}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div style={styles.formGroup}>
+                            <label style={styles.label}>Port Status</label>
+                            <select
+                              value={port.status}
+                              onChange={(e) => handlePortChange(index, 'status', e.target.value)}
+                              disabled={loading || savingThisPort}
+                              style={styles.input}
+                            >
+                              {DEVICE_STATUS_OPTIONS.map((status) => (
+                                <option key={status} value={status}>{status}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div style={styles.formGroupWide}>
+                            <label style={styles.label}>Connected Device</label>
+                            <select
+                              value={port.connected_device_id}
+                              onChange={(e) => handlePortChange(index, 'connected_device_id', e.target.value)}
+                              disabled={loading || savingThisPort}
+                              style={styles.input}
+                            >
+                              <option value="">Not assigned</option>
+                              {availableDevices.map((candidate) => (
+                                <option key={candidate.id} value={candidate.id}>
+                                  {candidate.name || `Device ${candidate.id}`}
+                                  {candidate.location ? ` • ${candidate.location}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div style={styles.formGroupWide}>
+                            <label style={styles.label}>Remote Port ID</label>
+                            <input
+                              value={port.remote_port_id}
+                              onChange={(e) => handlePortChange(index, 'remote_port_id', e.target.value)}
+                              disabled={loading || savingThisPort}
+                              style={styles.input}
+                              placeholder="Optional uplink to another switch port"
+                              inputMode="numeric"
+                            />
+                          </div>
+
+                          <div style={styles.formGroupWide}>
+                            <label style={styles.label}>Cable Label</label>
+                            <input
+                              value={port.cable_label}
+                              onChange={(e) => handlePortChange(index, 'cable_label', e.target.value)}
+                              disabled={loading || savingThisPort}
+                              style={styles.input}
+                            />
+                          </div>
+
+                          <div style={styles.formGroupWide}>
+                            <label style={styles.label}>Notes</label>
+                            <textarea
+                              value={port.notes}
+                              onChange={(e) => handlePortChange(index, 'notes', e.target.value)}
+                              disabled={loading || savingThisPort}
+                              style={styles.textarea}
+                              rows={3}
+                            />
+                          </div>
+                        </div>
+
+                        <div style={styles.portButtonGroup}>
+                          <button
+                            onClick={() => handleSavePort(port, index)}
+                            disabled={loading || savingThisPort}
+                            style={{
+                              ...styles.saveButton,
+                              ...(loading || savingThisPort ? styles.buttonDisabled : {}),
+                            }}
+                          >
+                            {savingThisPort ? 'Saving...' : 'Save Port'}
+                          </button>
+                          <button
+                            onClick={() => handleDeletePort(port, index)}
+                            disabled={loading || savingThisPort}
+                            style={{
+                              ...styles.deleteButton,
+                              ...(loading || savingThisPort ? styles.buttonDisabled : {}),
+                            }}
+                          >
+                            {port.id ? 'Delete Port' : 'Remove Draft'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
             {error && <div style={styles.errorMessage}>{error}</div>}
             {success && <div style={styles.successMessage}>{success}</div>}
 
@@ -420,6 +812,84 @@ const styles = {
     fontSize: '12px',
     color: '#95a5a6',
     padding: '8px 0 2px',
+  },
+  textarea: {
+    width: '100%',
+    padding: '12px 13px',
+    border: '1.5px solid #d5dbdb',
+    borderRadius: '8px',
+    fontSize: '14px',
+    boxSizing: 'border-box',
+    fontFamily: 'inherit',
+    transition: 'all 0.2s ease',
+    backgroundColor: '#f9fafb',
+    resize: 'vertical',
+  },
+  portSection: {
+    marginTop: '24px',
+    paddingTop: '20px',
+    borderTop: '2px solid #ecf0f1',
+  },
+  portSectionHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '12px',
+    marginBottom: '16px',
+  },
+  portSectionTitle: {
+    fontSize: '16px',
+    fontWeight: '700',
+    color: '#2c3e50',
+  },
+  portSectionHint: {
+    marginTop: '4px',
+    fontSize: '12px',
+    color: '#6b7b8d',
+  },
+  portCard: {
+    border: '1px solid #e1e8ed',
+    borderRadius: '10px',
+    padding: '16px',
+    backgroundColor: '#fbfcfd',
+    marginBottom: '14px',
+  },
+  portCardHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '12px',
+    alignItems: 'baseline',
+    marginBottom: '12px',
+    flexWrap: 'wrap',
+  },
+  portSummaryText: {
+    fontSize: '12px',
+    color: '#6b7b8d',
+  },
+  portGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+    gap: '12px',
+  },
+  formGroupWide: {
+    marginBottom: '15px',
+    gridColumn: '1 / -1',
+  },
+  portButtonGroup: {
+    display: 'flex',
+    gap: '10px',
+    marginTop: '12px',
+    flexWrap: 'wrap',
+  },
+  secondaryButton: {
+    padding: '11px 14px',
+    backgroundColor: '#eef3f8',
+    color: '#2c3e50',
+    border: '1px solid #d5dbdb',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '700',
   },
   buttonGroup: {
     display: 'flex',
