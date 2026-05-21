@@ -59,6 +59,17 @@ const TYPE_ICON_MAP = {
   Other: '📡',
 };
 
+const resolveDeviceIcon = (device) => {
+  const type = String(device?.type || '').toLowerCase();
+  const icon = device?.icon;
+
+  if (type.includes('switch') && (!icon || icon === '🔀')) {
+    return '📡';
+  }
+
+  return icon || '💻';
+};
+
 const formatPortSummary = (host) => host.portSummary || '-';
 const extractSortableNumber = (value) => {
   if (value === null || value === undefined) {
@@ -423,7 +434,7 @@ const DevicesPage = () => {
       manufacturer: host.vendor || '',
       ip_address: host.ipAddress,
       type: host.deviceTypeGuess || 'Other',
-      icon: TYPE_ICON_MAP[host.deviceTypeGuess] || (host.vendor ? '🛜' : '📡'),
+      icon: TYPE_ICON_MAP[host.deviceTypeGuess] || (host.vendor ? '🛜' : '🔀'),
       os: host.osGuess || '',
       location: 'Auto-discovered',
       status: 'Active',
@@ -1224,7 +1235,7 @@ const DevicesPage = () => {
                           style={{ cursor: 'pointer' }}
                         />
                       </td>
-                      <td style={styles.td}>{device.icon || '💻'}</td>
+                      <td style={styles.td}>{resolveDeviceIcon(device)}</td>
                       <td style={styles.td}>{device.name}</td>
                       <td style={styles.td}>{device.manufacturer || '-'}</td>
                       <td style={styles.td}>{device.user_name || '-'}</td>

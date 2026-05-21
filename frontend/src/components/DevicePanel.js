@@ -55,6 +55,8 @@ const normalizePortDraft = (port) => ({
   remote_port_number: port?.remote_port_number || '',
 });
 const buildEmptyPort = () => ({ ...EMPTY_PORT });
+const formatSwitchName = (switchDevice) => switchDevice?.name || `Switch ${switchDevice?.id}`;
+const compareRemotePortLabels = (left, right) => left.label.localeCompare(right.label);
 
 const DevicePanel = ({ device, onClose, refreshDevices, onPortsChanged }) => {
   // Form state
@@ -65,6 +67,7 @@ const DevicePanel = ({ device, onClose, refreshDevices, onPortsChanged }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [ports, setPorts] = useState([]);
   const [availableDevices, setAvailableDevices] = useState([]);
+  const [availableRemotePorts, setAvailableRemotePorts] = useState([]);
   const [portsLoading, setPortsLoading] = useState(false);
   const [portsSavingId, setPortsSavingId] = useState(null);
   const visibleFields = getVisibleDeviceFields(formData);
@@ -77,6 +80,7 @@ const DevicePanel = ({ device, onClose, refreshDevices, onPortsChanged }) => {
     setShowDeleteConfirm(false);
     setPorts([]);
     setAvailableDevices([]);
+    setAvailableRemotePorts([]);
     setPortsLoading(false);
     setPortsSavingId(null);
   }, [device]);
@@ -93,9 +97,26 @@ const DevicePanel = ({ device, onClose, refreshDevices, onPortsChanged }) => {
       setError('');
 
       try {
-        const [portsResponse, devicesResponse] = await Promise.all([
+        const devicesResponse = await getDevices();
+
+        if (cancelled) {
+          return;
+        }
+
+        const allDevices = devicesResponse.data || [];
+        const [portsResponse, remoteSwitchPortResponses] = await Promise.all([
           getDevicePorts(device.id),
-          getDevices(),
+          Promise.all(
+            allDevices
+              .filter((candidate) => candidate.id !== device.id && isSwitchDevice(candidate))
+              .map(async (switchCandidate) => {
+                const response = await getDevicePorts(switchCandidate.id);
+                return {
+                  switchCandidate,
+                  ports: response.data || [],
+                };
+              })
+          ),
         ]);
 
         if (cancelled) {
@@ -103,7 +124,15 @@ const DevicePanel = ({ device, onClose, refreshDevices, onPortsChanged }) => {
         }
 
         setPorts((portsResponse.data || []).map(normalizePortDraft));
-        setAvailableDevices((devicesResponse.data || []).filter((candidate) => candidate.id !== device.id));
+        setAvailableDevices(allDevices.filter((candidate) => candidate.id !== device.id));
+        setAvailableRemotePorts(
+          remoteSwitchPortResponses
+            .flatMap(({ switchCandidate, ports }) => ports.map((port) => ({
+              id: String(port.id),
+              label: `${formatSwitchName(switchCandidate)} • ${port.port_number || `Port ${port.id}`}`,
+            })))
+            .sort(compareRemotePortLabels)
+        );
       } catch (err) {
         if (!cancelled) {
           setError(getApiErrorMessage(err, 'Failed to load switch ports.'));
@@ -520,6 +549,8 @@ const DevicePanel = ({ device, onClose, refreshDevices, onPortsChanged }) => {
                 ) : (
                   ports.map((port, index) => {
                     const savingThisPort = portsSavingId === (port.id || `new-${index}`);
+                    const remotePortHasMatch = !port.remote_port_id
+                      || availableRemotePorts.some((option) => option.id === port.remote_port_id);
 
                     return (
                       <div key={port.id || `draft-${index}`} style={styles.portCard}>
@@ -623,15 +654,23 @@ const DevicePanel = ({ device, onClose, refreshDevices, onPortsChanged }) => {
                           </div>
 
                           <div style={styles.formGroupWide}>
-                            <label style={styles.label}>Remote Port ID</label>
-                            <input
+                            <label style={styles.label}>Remote Uplink Port</label>
+                            <select
                               value={port.remote_port_id}
                               onChange={(e) => handlePortChange(index, 'remote_port_id', e.target.value)}
                               disabled={loading || savingThisPort}
                               style={styles.input}
-                              placeholder="Optional uplink to another switch port"
-                              inputMode="numeric"
-                            />
+                            >
+                              <option value="">Not assigned</option>
+                              {!remotePortHasMatch && port.remote_port_id && (
+                                <option value={port.remote_port_id}>{`Current selection (ID ${port.remote_port_id})`}</option>
+                              )}
+                              {availableRemotePorts.map((remotePortOption) => (
+                                <option key={remotePortOption.id} value={remotePortOption.id}>
+                                  {remotePortOption.label}
+                                </option>
+                              ))}
+                            </select>
                           </div>
 
                           <div style={styles.formGroupWide}>

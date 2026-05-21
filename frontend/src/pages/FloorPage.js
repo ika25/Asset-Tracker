@@ -56,6 +56,16 @@ const EMPTY_DEVICE = {
 };
 
 const isSwitchDevice = (device) => String(device?.type || '').toLowerCase().includes('switch');
+const resolveDeviceIcon = (device) => {
+  const type = String(device?.type || '').toLowerCase();
+  const icon = device?.icon;
+
+  if (type.includes('switch') && (!icon || icon === '🔀')) {
+    return '📡';
+  }
+
+  return icon || '💻';
+};
 const hasMappedPosition = (device) => (
   device?.x_position !== null
   && device?.x_position !== undefined
@@ -1482,7 +1492,7 @@ const FloorPage = () => {
                 const logicalY = Number.isFinite(rawY) ? rawY : 0;
                 const x = logicalX * mapScaleX;
                 const y = logicalY * mapScaleY;
-                const icon = device.icon || '💻';
+                const icon = resolveDeviceIcon(device);
 
                 const status = device.status || '';
                 const dotColor =
