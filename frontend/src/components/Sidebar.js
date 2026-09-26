@@ -51,7 +51,13 @@ const Sidebar = () => {
 
   return (
     <div style={styles.sidebar}>
-      <h2 style={styles.logo}>IT Tracker</h2>
+      <div style={styles.logoWrap}>
+        <img
+          src="/caraghprecision.jpg"
+          alt="Caragh Precision"
+          style={styles.logo}
+        />
+      </div>
 
       {menu.map((item) => (
         <div key={item.name}>
@@ -121,10 +127,19 @@ const styles = {
     height: '100vh',
     overflowY: 'auto',
   },
+  logoWrap: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '18px 10px 12px',
+    marginBottom: '12px',
+  },
   logo: {
-    textAlign: 'center',
-    marginBottom: '30px',
-    marginTop: 0,
+    display: 'block',
+    width: '100%',
+    maxWidth: '180px',
+    height: 'auto',
+    objectFit: 'contain',
   },
   menuButton: {
     display: 'flex',
