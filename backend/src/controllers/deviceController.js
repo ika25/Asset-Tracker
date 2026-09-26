@@ -422,8 +422,7 @@ export const importDevicesFromCSV = async (req, res, next) => {
       return;
     }
 
-    // Parse CSV
-    const rows = parseCSV(req.file.buffer, [
+    const expectedHeaders = [
       'name',
       'ip_address',
       'type',
@@ -436,7 +435,10 @@ export const importDevicesFromCSV = async (req, res, next) => {
       'disk_space',
       'serial_number',
       'install_date',
-    ]);
+    ];
+
+    // Parse CSV and map common Excel-style column names to the app's expected fields.
+    const rows = parseCSV(req.file.buffer, expectedHeaders);
 
     // Validate rows
     const { valid: validRows, invalid: invalidRows } = validateRows(rows, deviceCSVImportSchema);
@@ -467,15 +469,14 @@ export const importDevicesFromCSV = async (req, res, next) => {
 
         // Insert device
         const deviceResult = await client.query(
-          `INSERT INTO devices (name, ip_address, type, status, location)
-           VALUES ($1, $2, $3, $4, $5)
+          `INSERT INTO devices (name, ip_address, type, status)
+           VALUES ($1, $2, $3, $4)
            RETURNING id`,
           [
             normalizeValue(row.name),
             ipAddress,
             normalizeValue(row.type),
             normalizeValue(row.status),
-            normalizeValue(row.location),
           ]
         );
 
@@ -484,8 +485,8 @@ export const importDevicesFromCSV = async (req, res, next) => {
         // Insert device details
         await client.query(
           `INSERT INTO device_details (
-             device_id, manufacturer, os, user_name, ram, disk_space, serial_number, install_date
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+             device_id, manufacturer, os, user_name, ram, disk_space, serial_number, install_date, location
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
           [
             deviceId,
             normalizeValue(row.manufacturer),
@@ -495,6 +496,7 @@ export const importDevicesFromCSV = async (req, res, next) => {
             normalizeValue(row.disk_space),
             normalizeValue(row.serial_number),
             row.install_date || null,
+            normalizeValue(row.location),
           ]
         );
 
@@ -536,24 +538,31 @@ export const exportDevicesToCSV = async (req, res, next) => {
     const result = await pool.query(DEVICE_SELECT);
     const devices = result.rows;
 
-    // Select columns to export
-    const columns = [
-      'id',
-      'name',
-      'ip_address',
-      'type',
-      'status',
-      'location',
-      'manufacturer',
-      'os',
-      'user_name',
-      'ram',
-      'disk_space',
-      'serial_number',
-      'install_date',
+    const exportColumns = [
+      { key: 'id', label: 'ID' },
+      { key: 'name', label: 'PC Name' },
+      { key: 'ip_address', label: 'IP Address' },
+      { key: 'type', label: 'Type' },
+      { key: 'status', label: 'Status' },
+      { key: 'location', label: 'Location' },
+      { key: 'manufacturer', label: 'Manufacturer' },
+      { key: 'os', label: 'OS' },
+      { key: 'user_name', label: 'User Name' },
+      { key: 'ram', label: 'RAM' },
+      { key: 'disk_space', label: 'Disk Space' },
+      { key: 'serial_number', label: 'Serial Number' },
+      { key: 'install_date', label: 'Install Date' },
     ];
 
-    const csv = generateCSV(devices, columns);
+    const exportRows = devices.map((device) => {
+      const row = {};
+      for (const column of exportColumns) {
+        row[column.label] = device[column.key] ?? '';
+      }
+      return row;
+    });
+
+    const csv = generateCSV(exportRows, exportColumns.map((column) => column.label));
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="devices.csv"');

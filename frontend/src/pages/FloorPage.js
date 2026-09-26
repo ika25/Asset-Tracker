@@ -20,7 +20,7 @@ import {
 // Panels
 import DevicePanel from '../components/DevicePanel';
 
-const ICON_OPTIONS = ['💻', '🖥️', '🖨️', '🛜', '📡', '🗄️', '📱', '📷'];
+const ICON_OPTIONS = ['💻', '🖥️', '🖨️', '🛜', '📡', '️', '📱', '📷'];
 const FLOOR_IMAGE_STORAGE_KEY = 'asset-tracker.floor-map-image';
 const FLOOR_LAYOUTS_STORAGE_KEY = 'asset-tracker.floor-map-layouts';
 const ACTIVE_LAYOUT_STORAGE_KEY = 'asset-tracker.floor-map-active-layout';
@@ -99,8 +99,11 @@ const FloorPage = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [showGrid, setShowGrid] = useState(true);
   const [showAddDeviceModal, setShowAddDeviceModal] = useState(false);
+  const [showMapExistingDeviceModal, setShowMapExistingDeviceModal] = useState(false);
   const [newDevice, setNewDevice] = useState(EMPTY_DEVICE);
   const [isPlacingDevice, setIsPlacingDevice] = useState(false);
+  const [isPlacingExistingDevice, setIsPlacingExistingDevice] = useState(false);
+  const [deviceToMapId, setDeviceToMapId] = useState('');
   const [pendingPlacement, setPendingPlacement] = useState(null);
   const [hoveredDevice, setHoveredDevice] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
@@ -135,6 +138,7 @@ const FloorPage = () => {
   const [nextZoneColorIndex, setNextZoneColorIndex] = useState(0);
   const [switchPortTopology, setSwitchPortTopology] = useState([]);
   const [topologyReloadToken, setTopologyReloadToken] = useState(0);
+  const [devicePortCounts, setDevicePortCounts] = useState({});
 
   // Eraser
   const [isErasing, setIsErasing] = useState(false);
@@ -397,11 +401,18 @@ const FloorPage = () => {
           return;
         }
 
+        const allPorts = responses.flatMap((response) => response.data || []);
         setSwitchPortTopology(
-          responses
-            .flatMap((response) => response.data || [])
-            .filter((port) => port.connection_id && (port.connected_device_id || port.remote_switch_id))
+          allPorts.filter((port) => port.connection_id && (port.connected_device_id || port.remote_switch_id))
         );
+
+        // Build a map of deviceId -> total ports tracked for quick badges
+        const counts = {};
+        switchIds.forEach((sid, i) => {
+          const data = (responses[i] && responses[i].data) || [];
+          counts[sid] = data.length || 0;
+        });
+        setDevicePortCounts(counts);
       } catch (err) {
         if (!cancelled) {
           setError(getApiErrorMessage(err, 'Failed to load network topology.'));
@@ -493,6 +504,62 @@ const FloorPage = () => {
     setIsPlacingDevice(false);
     setPendingPlacement(null);
     setNewDevice(EMPTY_DEVICE);
+  };
+
+  const handleOpenMapExistingDevice = () => {
+    setError('');
+    setSelectedDevice(null);
+    setShowAddDeviceModal(false);
+    setIsPlacingDevice(false);
+    setIsPlacingExistingDevice(false);
+
+    if (unmappedDevices.length === 0) {
+      setError('All devices are already placed on the floor map.');
+      return;
+    }
+
+    setDeviceToMapId(String(unmappedDevices[0].id));
+    setShowMapExistingDeviceModal(true);
+  };
+
+  const handleCloseMapExistingDevice = () => {
+    setShowMapExistingDeviceModal(false);
+    setIsPlacingExistingDevice(false);
+    setDeviceToMapId('');
+  };
+
+  const handleStartExistingDevicePlacement = () => {
+    if (!deviceToMapId) {
+      setError('Select a device to place on the map.');
+      return;
+    }
+
+    setShowMapExistingDeviceModal(false);
+    setIsPlacingExistingDevice(true);
+    setError('');
+  };
+
+  const placeExistingDeviceAt = async (x, y) => {
+    const selectedDeviceId = Number(deviceToMapId);
+    if (!selectedDeviceId) {
+      setError('No device selected to place on the map.');
+      return;
+    }
+
+    try {
+      setError('');
+      await updateDevice(selectedDeviceId, { x_position: x, y_position: y });
+      setDevices((prev) => prev.map((device) =>
+        device.id === selectedDeviceId ? { ...device, x_position: x, y_position: y } : device
+      ));
+      const mappedDevice = devices.find((device) => device.id === selectedDeviceId);
+      if (mappedDevice) {
+        setSelectedDevice({ ...mappedDevice, x_position: x, y_position: y });
+      }
+      handleCloseMapExistingDevice();
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to place the selected device on the map.'));
+    }
   };
 
   const openAddModalAtPlacement = (x, y) => {
@@ -789,6 +856,23 @@ const FloorPage = () => {
     if (e.target.draggable()) return;
     if (isDrawingZone) return;
 
+    if (isPlacingExistingDevice) {
+      const stage = e.target.getStage();
+      const pointer = stage?.getPointerPosition();
+      if (!pointer) return;
+
+      const mapX = (pointer.x - position.x) / zoom;
+      const mapY = (pointer.y - position.y) / zoom;
+      const logicalX = mapX / mapScaleX;
+      const logicalY = mapY / mapScaleY;
+
+      const snappedX = Math.round(Math.max(0, Math.min(logicalX, BASE_MAP_WIDTH)) / SNAP_SIZE) * SNAP_SIZE;
+      const snappedY = Math.round(Math.max(0, Math.min(logicalY, BASE_MAP_HEIGHT)) / SNAP_SIZE) * SNAP_SIZE;
+
+      placeExistingDeviceAt(snappedX, snappedY);
+      return;
+    }
+
     if (isPlacingDevice) {
       const stage = e.target.getStage();
       const pointer = stage?.getPointerPosition();
@@ -990,6 +1074,11 @@ const FloorPage = () => {
     );
   }, [isSearchActive, searchQuery]);
 
+  const unmappedDevices = useMemo(
+    () => devices.filter((device) => !hasMappedPosition(device)),
+    [devices]
+  );
+
   const filteredDevices = devices.filter((device) => {
     // Type filter
     const typeMatch = !typeFilter || (device.type || '').toLowerCase() === typeFilter.toLowerCase();
@@ -1028,6 +1117,8 @@ const FloorPage = () => {
       const targetMatches = matchesSearch(targetDevice);
       links.push({
         id: port.connection_id,
+        sourceId: sourceDevice.id,
+        targetId: targetDevice.id,
         sourceX: Number(sourceDevice.x_position) * mapScaleX,
         sourceY: Number(sourceDevice.y_position) * mapScaleY,
         targetX: Number(targetDevice.x_position) * mapScaleX,
@@ -1039,6 +1130,37 @@ const FloorPage = () => {
       return links;
     }, []);
   }, [filteredDeviceMap, isSearchActive, mapScaleX, mapScaleY, matchesSearch, switchPortTopology]);
+
+  // Aggregate multiple connections between the same device pair into a single visual link
+  const aggregatedNetworkLinks = useMemo(() => {
+    const map = new Map();
+
+    visibleNetworkLinks.forEach((link) => {
+      const a = Number(link.sourceId);
+      const b = Number(link.targetId);
+      const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+
+      const entry = map.get(key) || {
+        id: key,
+        sourceX: link.sourceX,
+        sourceY: link.sourceY,
+        targetX: link.targetX,
+        targetY: link.targetY,
+        count: 0,
+        isUplink: link.isUplink,
+        dimmed: link.dimmed,
+      };
+
+      entry.count += 1;
+      // prefer showing uplink styling if any connection is an uplink
+      entry.isUplink = entry.isUplink || link.isUplink;
+      entry.dimmed = entry.dimmed && link.dimmed;
+
+      map.set(key, entry);
+    });
+
+    return Array.from(map.values());
+  }, [visibleNetworkLinks]);
 
   // Get unique device types
   const deviceTypes = [...new Set([...DEVICE_TYPE_OPTIONS, ...devices.map((d) => d.type).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
@@ -1099,6 +1221,14 @@ const FloorPage = () => {
             {isPlacingDevice ? 'Click Map to Place' : 'Add Device'}
           </button>
 
+          <button
+            onClick={handleOpenMapExistingDevice}
+            style={styles.secondaryToolButton}
+            title="Place an existing device on the floor map"
+          >
+            Map Existing Device
+          </button>
+
           {isPlacingDevice && (
             <button
               onClick={() => setIsPlacingDevice(false)}
@@ -1106,6 +1236,16 @@ const FloorPage = () => {
               title="Cancel map placement mode"
             >
               Cancel Placement
+            </button>
+          )}
+
+          {isPlacingExistingDevice && (
+            <button
+              onClick={() => setIsPlacingExistingDevice(false)}
+              style={styles.cancelPlacementButton}
+              title="Cancel placement of an existing device"
+            >
+              Cancel Map Device
             </button>
           )}
 
@@ -1298,6 +1438,12 @@ const FloorPage = () => {
           </div>
         )}
 
+        {isPlacingExistingDevice && (
+          <div style={styles.placementInfo}>
+            Click on the map to place the selected device at that location.
+          </div>
+        )}
+
         {isDrawingZone && (
           <div style={{ ...styles.placementInfo, backgroundColor: '#f3e5f5', color: '#6c3483', borderColor: '#9b59b6' }}>
             Click and drag on the map to draw a zone rectangle.
@@ -1462,20 +1608,34 @@ const FloorPage = () => {
                 );
               })()}
 
-              {/* Network topology lines */}
-              {visibleNetworkLinks.map((link) => (
-                <Line
-                  key={`network-link-${link.id}`}
-                  points={[link.sourceX, link.sourceY, link.targetX, link.targetY]}
-                  stroke={link.isUplink ? '#355c7d' : '#3ba57d'}
-                  strokeWidth={link.isUplink ? 3 : 2.5}
-                  opacity={link.dimmed ? 0.16 : 0.72}
-                  dash={link.isUplink ? [10, 6] : undefined}
-                  lineCap="round"
-                  lineJoin="round"
-                  listening={false}
-                />
-              ))}
+              {/* Network topology lines (aggregated by device pair) */}
+              {aggregatedNetworkLinks.map((link) => {
+                const baseWidth = link.isUplink ? 3 : 2.5;
+                const width = baseWidth + Math.min(link.count - 1, 6) * 0.9;
+                const midX = (link.sourceX + link.targetX) / 2;
+                const midY = (link.sourceY + link.targetY) / 2;
+
+                return (
+                  <React.Fragment key={`network-link-${link.id}`}>
+                    <Line
+                      points={[link.sourceX, link.sourceY, link.targetX, link.targetY]}
+                      stroke={link.isUplink ? '#355c7d' : '#3ba57d'}
+                      strokeWidth={width}
+                      opacity={link.dimmed ? 0.18 : 0.82}
+                      dash={link.isUplink ? [10, 6] : undefined}
+                      lineCap="round"
+                      lineJoin="round"
+                      listening={false}
+                    />
+                    {link.count > 1 && (
+                      <Group x={midX} y={midY} listening={false}>
+                        <Circle radius={10} fill="#1f2937" opacity={0.9} />
+                        <Text text={`${link.count}`} fontSize={11} fill="#fff" align="center" verticalAlign="middle" x={-6} y={-7} />
+                      </Group>
+                    )}
+                  </React.Fragment>
+                );
+              })}
 
               {/* Devices */}
               {filteredDevices.filter((device) => {
@@ -1549,6 +1709,13 @@ const FloorPage = () => {
                       stroke={selectedDevice?.id === device.id ? 'yellow' : undefined}
                       strokeWidth={selectedDevice?.id === device.id ? 1 : 0}
                     />
+                    {/* Port count badge */}
+                    { (devicePortCounts[device.id] || 0) > 0 && (
+                      <Group x={ICON_HALF - 6} y={-ICON_HALF + 6} listening={false}>
+                        <Circle radius={10} fill="#111" opacity={0.9} />
+                        <Text text={`${devicePortCounts[device.id]}`} fontSize={11} fill="#fff" align="center" verticalAlign="middle" x={-6} y={-7} />
+                      </Group>
+                    )}
                     {/* Status dot badge */}
                     <Circle
                       x={8}
@@ -1629,6 +1796,48 @@ const FloorPage = () => {
       </div>
 
       {/* MODALS */}
+      {showMapExistingDeviceModal && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.addDeviceModal}>
+            <div style={styles.modalHeader}>
+              <div>
+                <h3 style={styles.modalTitle}>Map Existing Device</h3>
+                <div style={styles.modalSubtitle}>Choose a saved device and then click its location on the map.</div>
+              </div>
+              <button onClick={handleCloseMapExistingDevice} style={styles.modalCloseButton} disabled={saving}>
+                ✕
+              </button>
+            </div>
+
+            {error && <div style={styles.modalError}>{error}</div>}
+
+            <div style={styles.addDeviceForm}>
+              <select
+                value={deviceToMapId}
+                onChange={(e) => setDeviceToMapId(e.target.value)}
+                style={styles.modalInput}
+              >
+                <option value="">Select a device</option>
+                {unmappedDevices.map((device) => (
+                  <option key={device.id} value={device.id}>
+                    {device.name || 'Unnamed device'} {device.type ? `- ${device.type}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.modalActions}>
+              <button onClick={handleCloseMapExistingDevice} style={styles.secondaryButton} disabled={saving}>
+                Cancel
+              </button>
+              <button onClick={handleStartExistingDevicePlacement} style={styles.primaryButton} disabled={saving || !deviceToMapId}>
+                {saving ? 'Saving...' : 'Place on Map'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAddDeviceModal && (
         <div style={styles.modalOverlay}>
           <div style={styles.addDeviceModal}>

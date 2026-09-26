@@ -23,7 +23,7 @@ import {
 } from '../utils/deviceFormConfig';
 import { useCrudResource } from '../hooks/useCrudResource';
 
-const ICON_OPTIONS = ['💻', '🖥️', '🖨️', '🛜', '📡', '🗄️', '📱', '📷'];
+const ICON_OPTIONS = ['💻', '🖥️', '🖨️', '🛜', '📡', '️', '📱', '📷'];
 const EMPTY_DEVICE = {
   name: '',
   manufacturer: '',
