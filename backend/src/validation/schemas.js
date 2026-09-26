@@ -9,6 +9,7 @@ const idParam = z.object({ id: z.coerce.number().int().positive() });
 const deviceIdParam = z.object({ deviceId: z.coerce.number().int().positive() });
 const numberLike = z.union([z.number(), z.string(), z.null()]).optional();
 const statusValue = z.enum(['Active', 'Inactive', 'Retired', 'In Repair', 'For Sale', 'Online', 'Offline']).optional();
+const portTypeValue = z.enum(['copper', 'fiber', 'sfp']).optional();
 
 export const deviceCreateSchema = z.object({
   name: optionalString,
@@ -31,6 +32,32 @@ export const deviceCreateSchema = z.object({
 }).strict();
 
 export const deviceUpdateSchema = deviceCreateSchema.partial();
+
+export const switchPortCreateSchema = z.object({
+  port_number: z.string().trim().min(1, 'Port number is required.').max(20, 'Port number is too long.'),
+  label: optionalString,
+  speed: optionalString,
+  vlan_id: z.coerce.number().int().positive().nullable().optional(),
+  port_type: portTypeValue,
+  status: statusValue,
+}).strict();
+
+export const switchPortUpdateSchema = switchPortCreateSchema.partial();
+
+export const portConnectionCreateSchema = z.object({
+  connected_device_id: z.coerce.number().int().positive().nullable().optional(),
+  remote_port_id: z.coerce.number().int().positive().nullable().optional(),
+  cable_label: optionalString,
+  notes: optionalString,
+}).strict().superRefine((value, ctx) => {
+  if (!value.connected_device_id && !value.remote_port_id) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['connected_device_id'],
+      message: 'Provide a connected device or a remote port.',
+    });
+  }
+});
 
 export const hardwareCreateSchema = z.object({
   name: z.string().trim().min(1, 'Name is required.'),
@@ -68,6 +95,47 @@ export const floorUpdateSchema = floorCreateSchema;
 export const assignSoftwareSchema = z.object({
   device_id: z.coerce.number().int().positive(),
   software_id: z.coerce.number().int().positive(),
+}).strict();
+
+export const bulkDeleteSchema = z.object({
+  ids: z.array(z.coerce.number().int().positive()).min(1, 'At least one ID is required.'),
+}).strict();
+
+// CSV Import Schemas - lenient, allow missing fields
+export const deviceCSVImportSchema = z.object({
+  name: optionalString,
+  ip_address: optionalString,
+  type: optionalString,
+  status: statusValue,
+  location: optionalString,
+  manufacturer: optionalString,
+  os: optionalString,
+  user_name: optionalString,
+  ram: optionalString,
+  disk_space: optionalString,
+  serial_number: optionalString,
+  install_date: dateString,
+}).strict();
+
+export const hardwareCSVImportSchema = z.object({
+  name: optionalString,
+  type: optionalString,
+  model: optionalString,
+  manufacturer: optionalString,
+  purchase_date: dateString,
+  cost: optionalString,
+  location: optionalString,
+  warranty_expiry: dateString,
+  status: statusValue,
+}).strict();
+
+export const softwareCSVImportSchema = z.object({
+  name: optionalString,
+  version: optionalString,
+  vendor: optionalString,
+  license_type: optionalString,
+  license_expiry: dateString,
+  installation_date: dateString,
 }).strict();
 
 export const idParamSchema = idParam;

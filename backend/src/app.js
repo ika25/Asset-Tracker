@@ -4,9 +4,11 @@ import cors from 'cors';
 import deviceRoutes from './routes/deviceRoutes.js';
 import floorRoutes from './routes/floorRoutes.js';
 import scanRoutes from './routes/scanRoutes.js';
+import pingRoutes from './routes/pingRoutes.js';
 import deviceSoftwareRoutes from './routes/deviceSoftwareRoutes.js';
 import softwareRoutes from './routes/softwareRoutes.js';
 import hardwareRoutes from './routes/hardwareRoutes.js';
+import portRoutes from './routes/portRoutes.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -22,9 +24,11 @@ app.get('/', (req, res) => {
 app.use('/api/devices', deviceRoutes);
 app.use('/api/floors', floorRoutes);
 app.use('/api/scan', scanRoutes);
+app.use('/api/ping', pingRoutes);
 app.use('/api/device-software', deviceSoftwareRoutes);
 app.use('/api/software', softwareRoutes);
 app.use('/api/hardware', hardwareRoutes);
+app.use('/api', portRoutes);
 
 // Keep these last so unmatched routes and thrown errors are handled consistently.
 app.use(notFoundHandler);

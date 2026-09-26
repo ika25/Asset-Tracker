@@ -6,6 +6,8 @@ import {
   insertAuditLog,
 } from '../utils/audit.js';
 import { HttpError } from '../errors/httpError.js';
+import { parseCSV, generateCSV, validateRows } from '../utils/csv.js';
+import { deviceCSVImportSchema } from '../validation/schemas.js';
 
 const DEVICE_SELECT = `
   SELECT
@@ -33,6 +35,30 @@ const DEVICE_SELECT = `
 
 // Form fields often arrive as '' or undefined. We store those as NULL in Postgres.
 const normalizeValue = (value) => (value === '' || value === undefined ? null : value);
+const normalizeIpAddress = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized || null;
+};
+
+const getDeviceByNormalizedIp = async (client, ipAddress, excludeId = null) => {
+  if (!ipAddress) {
+    return null;
+  }
+
+  const params = [ipAddress];
+  let query = `
+    ${DEVICE_SELECT}
+    WHERE LOWER(TRIM(COALESCE(d.ip_address, ''))) = $1
+  `;
+
+  if (excludeId !== null) {
+    params.push(Number(excludeId));
+    query += ' AND d.id <> $2';
+  }
+
+  const { rows } = await client.query(query, params);
+  return rows[0] || null;
+};
 
 const insertStatusHistory = async (client, { deviceId, previousStatus, newStatus, actorName, metadata }) => {
   await client.query(
@@ -84,13 +110,21 @@ export const createDevice = async (req, res, next) => {
     // If any step fails, rollback keeps data and audit trail consistent.
     await client.query('BEGIN');
 
+    const normalizedIp = normalizeIpAddress(ip_address);
+    const duplicate = await getDeviceByNormalizedIp(client, normalizedIp);
+    if (duplicate) {
+      await client.query('ROLLBACK');
+      next(new HttpError(409, `A device with IP address ${normalizedIp} already exists.`));
+      return;
+    }
+
     const deviceResult = await client.query(
       `INSERT INTO devices (name, ip_address, type, status, x_position, y_position, floor_id, icon)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id`,
       [
         normalizeValue(name),
-        normalizeValue(ip_address),
+        normalizedIp,
         normalizeValue(type),
         normalizeValue(status) || 'Active',
         normalizeValue(x_position),
@@ -200,6 +234,14 @@ export const updateDevice = async (req, res, next) => {
       location: Object.prototype.hasOwnProperty.call(req.body, 'location') ? normalizeValue(req.body.location) : existing.location,
     };
 
+    const normalizedNextIp = normalizeIpAddress(nextDevice.ip_address);
+    const duplicate = await getDeviceByNormalizedIp(client, normalizedNextIp, id);
+    if (duplicate) {
+      await client.query('ROLLBACK');
+      next(new HttpError(409, `A device with IP address ${normalizedNextIp} already exists.`));
+      return;
+    }
+
     await client.query(
       `UPDATE devices SET
         name = $1,
@@ -213,7 +255,7 @@ export const updateDevice = async (req, res, next) => {
        WHERE id = $9`,
       [
         nextDevice.name,
-        nextDevice.ip_address,
+        normalizedNextIp,
         nextDevice.type,
         nextDevice.status,
         nextDevice.x_position,
@@ -317,5 +359,215 @@ export const deleteDevice = async (req, res, next) => {
     next(err);
   } finally {
     client.release();
+  }
+};
+
+export const bulkDeleteDevices = async (req, res, next) => {
+  const { ids } = req.body;
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const deviceIds = ids.map((id) => Number(id));
+
+    // Fetch existing devices for audit
+    const existingResult = await client.query(
+      `${DEVICE_SELECT} WHERE d.id = ANY($1::int[])`,
+      [deviceIds]
+    );
+    const existingDevices = existingResult.rows;
+
+    if (existingDevices.length === 0) {
+      await client.query('ROLLBACK');
+      next(new HttpError(404, 'No devices found with the provided IDs.'));
+      return;
+    }
+
+    // Delete devices
+    await client.query('DELETE FROM devices WHERE id = ANY($1::int[])', [deviceIds]);
+
+    // Audit each deletion
+    const metadata = buildMetadata(req);
+    const actorName = actorNameFromRequest(req);
+
+    for (const device of existingDevices) {
+      await insertAuditLog(client, {
+        entityType: 'device',
+        entityId: Number(device.id),
+        action: 'deleted',
+        actorName,
+        changes: { before: device },
+        metadata,
+      });
+    }
+
+    await client.query('COMMIT');
+    res.json({
+      message: `Successfully deleted ${existingDevices.length} device(s).`,
+      count: existingDevices.length,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+};
+
+export const importDevicesFromCSV = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      next(new HttpError(400, 'No file provided.'));
+      return;
+    }
+
+    const expectedHeaders = [
+      'name',
+      'ip_address',
+      'type',
+      'status',
+      'location',
+      'manufacturer',
+      'os',
+      'user_name',
+      'ram',
+      'disk_space',
+      'serial_number',
+      'install_date',
+    ];
+
+    // Parse CSV and map common Excel-style column names to the app's expected fields.
+    const rows = parseCSV(req.file.buffer, expectedHeaders);
+
+    // Validate rows
+    const { valid: validRows, invalid: invalidRows } = validateRows(rows, deviceCSVImportSchema);
+
+    if (validRows.length === 0) {
+      next(new HttpError(400, `No valid rows to import. ${invalidRows.length} row(s) with errors.`));
+      return;
+    }
+
+    // Insert valid rows
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const importedDevices = [];
+      const metadata = buildMetadata(req);
+      const actorName = actorNameFromRequest(req);
+
+      for (const row of validRows) {
+        const ipAddress = normalizeIpAddress(row.ip_address);
+
+        // Check for duplicate IP
+        const existingDevice = await getDeviceByNormalizedIp(client, ipAddress);
+        if (existingDevice) {
+          // Skip devices with duplicate IPs
+          continue;
+        }
+
+        // Insert device
+        const deviceResult = await client.query(
+          `INSERT INTO devices (name, ip_address, type, status)
+           VALUES ($1, $2, $3, $4)
+           RETURNING id`,
+          [
+            normalizeValue(row.name),
+            ipAddress,
+            normalizeValue(row.type),
+            normalizeValue(row.status),
+          ]
+        );
+
+        const deviceId = deviceResult.rows[0].id;
+
+        // Insert device details
+        await client.query(
+          `INSERT INTO device_details (
+             device_id, manufacturer, os, user_name, ram, disk_space, serial_number, install_date, location
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            deviceId,
+            normalizeValue(row.manufacturer),
+            normalizeValue(row.os),
+            normalizeValue(row.user_name),
+            normalizeValue(row.ram),
+            normalizeValue(row.disk_space),
+            normalizeValue(row.serial_number),
+            row.install_date || null,
+            normalizeValue(row.location),
+          ]
+        );
+
+        // Audit log
+        await insertAuditLog(client, {
+          entityType: 'device',
+          entityId: deviceId,
+          action: 'created',
+          actorName,
+          changes: { after: row },
+          metadata,
+        });
+
+        importedDevices.push({ id: deviceId, ...row });
+      }
+
+      await client.query('COMMIT');
+
+      res.json({
+        message: `CSV import completed. ${importedDevices.length} device(s) imported successfully.`,
+        imported: importedDevices.length,
+        skipped: validRows.length - importedDevices.length,
+        invalidRows: invalidRows.length,
+        errors: invalidRows,
+      });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const exportDevicesToCSV = async (req, res, next) => {
+  try {
+    const result = await pool.query(DEVICE_SELECT);
+    const devices = result.rows;
+
+    const exportColumns = [
+      { key: 'id', label: 'ID' },
+      { key: 'name', label: 'PC Name' },
+      { key: 'ip_address', label: 'IP Address' },
+      { key: 'type', label: 'Type' },
+      { key: 'status', label: 'Status' },
+      { key: 'location', label: 'Location' },
+      { key: 'manufacturer', label: 'Manufacturer' },
+      { key: 'os', label: 'OS' },
+      { key: 'user_name', label: 'User Name' },
+      { key: 'ram', label: 'RAM' },
+      { key: 'disk_space', label: 'Disk Space' },
+      { key: 'serial_number', label: 'Serial Number' },
+      { key: 'install_date', label: 'Install Date' },
+    ];
+
+    const exportRows = devices.map((device) => {
+      const row = {};
+      for (const column of exportColumns) {
+        row[column.label] = device[column.key] ?? '';
+      }
+      return row;
+    });
+
+    const csv = generateCSV(exportRows, exportColumns.map((column) => column.label));
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="devices.csv"');
+    res.send(csv);
+  } catch (err) {
+    next(err);
   }
 };

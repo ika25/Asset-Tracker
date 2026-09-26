@@ -1,11 +1,12 @@
 // Import React and hooks
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // Konva canvas components
-import { Stage, Layer, Group, Image, Text, Line, Circle } from 'react-konva';
+import { Stage, Layer, Group, Image, Text, Line, Circle, Rect } from 'react-konva';
 
 // API functions
 import { createDevice, getDevices, updateDevice } from '../api/deviceApi';
+import { getDevicePorts } from '../api/portApi';
 import { getApiErrorMessage } from '../api/client';
 import { useCrudResource } from '../hooks/useCrudResource';
 import {
@@ -19,7 +20,23 @@ import {
 // Panels
 import DevicePanel from '../components/DevicePanel';
 
-const ICON_OPTIONS = ['💻', '🖥️', '🖨️', '🛜', '📡', '🗄️', '📱', '📷'];
+const ICON_OPTIONS = ['💻', '🖥️', '🖨️', '🛜', '📡', '️', '📱', '📷'];
+const FLOOR_IMAGE_STORAGE_KEY = 'asset-tracker.floor-map-image';
+const FLOOR_LAYOUTS_STORAGE_KEY = 'asset-tracker.floor-map-layouts';
+const ACTIVE_LAYOUT_STORAGE_KEY = 'asset-tracker.floor-map-active-layout';
+const FLOOR_ZONES_STORAGE_KEY = 'asset-tracker.floor-map-zones';
+
+const ZONE_COLORS = [
+  { fill: 'rgba(52,152,219,0.15)', stroke: '#3498db', label: 'Blue' },
+  { fill: 'rgba(46,204,113,0.15)', stroke: '#2ecc71', label: 'Green' },
+  { fill: 'rgba(155,89,182,0.15)', stroke: '#9b59b6', label: 'Purple' },
+  { fill: 'rgba(230,126,34,0.15)', stroke: '#e67e22', label: 'Orange' },
+  { fill: 'rgba(231,76,60,0.15)', stroke: '#e74c3c', label: 'Red' },
+  { fill: 'rgba(241,196,15,0.15)', stroke: '#f1c40f', label: 'Yellow' },
+  { fill: 'rgba(26,188,156,0.15)', stroke: '#1abc9c', label: 'Teal' },
+];
+const DEFAULT_FLOOR_IMAGE_PATH = '/floor.png';
+const DEFAULT_LAYOUT_ID = 'default-layout';
 const EMPTY_DEVICE = {
   name: '',
   manufacturer: '',
@@ -37,6 +54,28 @@ const EMPTY_DEVICE = {
   location: '',
   status: 'Active',
 };
+
+const isSwitchDevice = (device) => String(device?.type || '').toLowerCase().includes('switch');
+const resolveDeviceIcon = (device) => {
+  const type = String(device?.type || '').toLowerCase();
+  const icon = device?.icon;
+
+  if (type.includes('switch') && (!icon || icon === '🔀')) {
+    return '📡';
+  }
+
+  return icon || '💻';
+};
+const hasMappedPosition = (device) => (
+  device?.x_position !== null
+  && device?.x_position !== undefined
+  && device?.x_position !== ''
+  && device?.y_position !== null
+  && device?.y_position !== undefined
+  && device?.y_position !== ''
+  && Number.isFinite(Number(device.x_position))
+  && Number.isFinite(Number(device.y_position))
+);
 
 // Important: x/y positions are saved in logical map coordinates (BASE_MAP_* scale),
 // not screen pixels. This keeps placement stable across zoom levels and screen sizes.
@@ -60,8 +99,11 @@ const FloorPage = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [showGrid, setShowGrid] = useState(true);
   const [showAddDeviceModal, setShowAddDeviceModal] = useState(false);
+  const [showMapExistingDeviceModal, setShowMapExistingDeviceModal] = useState(false);
   const [newDevice, setNewDevice] = useState(EMPTY_DEVICE);
   const [isPlacingDevice, setIsPlacingDevice] = useState(false);
+  const [isPlacingExistingDevice, setIsPlacingExistingDevice] = useState(false);
+  const [deviceToMapId, setDeviceToMapId] = useState('');
   const [pendingPlacement, setPendingPlacement] = useState(null);
   const [hoveredDevice, setHoveredDevice] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
@@ -78,6 +120,29 @@ const FloorPage = () => {
   const stageRef = useRef(null);
   const mapViewportRef = useRef(null);
   const hasAutoFittedRef = useRef(false);
+  const floorImageInputRef = useRef(null);
+  const eraseCanvasRef = useRef(null);       // offscreen canvas for erase operations
+  const konvaFloorImageRef = useRef(null);   // direct ref to Konva Image node
+  const isEraserActiveRef = useRef(false);   // mouse-held state (avoids stale closure)
+  const [layoutOptions, setLayoutOptions] = useState([
+    { id: DEFAULT_LAYOUT_ID, name: 'Default Layout', src: DEFAULT_FLOOR_IMAGE_PATH },
+  ]);
+  const [activeLayoutId, setActiveLayoutId] = useState(DEFAULT_LAYOUT_ID);
+
+  // Zones: { [layoutId]: Zone[] }  where Zone = { id, label, x, y, w, h, colorIndex }
+  const [zonesByLayout, setZonesByLayout] = useState({});
+  const [isDrawingZone, setIsDrawingZone] = useState(false);
+  const [zoneDrawStart, setZoneDrawStart] = useState(null);
+  const [zoneDrawCurrent, setZoneDrawCurrent] = useState(null);
+  const [showZonePanel, setShowZonePanel] = useState(false);
+  const [nextZoneColorIndex, setNextZoneColorIndex] = useState(0);
+  const [switchPortTopology, setSwitchPortTopology] = useState([]);
+  const [topologyReloadToken, setTopologyReloadToken] = useState(0);
+  const [devicePortCounts, setDevicePortCounts] = useState({});
+
+  // Eraser
+  const [isErasing, setIsErasing] = useState(false);
+  const [eraserSize, setEraserSize] = useState(20);
   const {
     items: devices,
     setItems: setDevices,
@@ -106,6 +171,10 @@ const FloorPage = () => {
   const mapScaleX = mapSize.width / BASE_MAP_WIDTH;
   const mapScaleY = mapSize.height / BASE_MAP_HEIGHT;
   const newDeviceFields = getVisibleDeviceFields(newDevice);
+  const switchDeviceIdsKey = useMemo(
+    () => devices.filter(isSwitchDevice).map((device) => device.id).sort((left, right) => left - right).join(','),
+    [devices]
+  );
 
   const detectContentBounds = (img) => {
     try {
@@ -192,13 +261,33 @@ const FloorPage = () => {
     });
   }, [viewportSize.width, viewportSize.height, contentBounds.width, contentBounds.height, contentBounds.x, contentBounds.y]);
 
-  // =========================
-  // LOAD FLOOR IMAGE
-  // =========================
-  useEffect(() => {
+  const persistLayouts = useCallback((layouts, activeId) => {
+    const customLayouts = layouts.filter((layout) => layout.id !== DEFAULT_LAYOUT_ID);
+    window.localStorage.setItem(FLOOR_LAYOUTS_STORAGE_KEY, JSON.stringify(customLayouts));
+    window.localStorage.setItem(ACTIVE_LAYOUT_STORAGE_KEY, activeId);
+  }, []);
+
+  const persistZones = useCallback((zonesMap) => {
+    window.localStorage.setItem(FLOOR_ZONES_STORAGE_KEY, JSON.stringify(zonesMap));
+  }, []);
+
+  // Zones for the currently active layout
+  const activeZones = zonesByLayout[activeLayoutId] || [];
+
+  const updateActiveZones = useCallback((updater) => {
+    setZonesByLayout((prev) => {
+      const current = prev[activeLayoutId] || [];
+      const next = typeof updater === 'function' ? updater(current) : updater;
+      const newMap = { ...prev, [activeLayoutId]: next };
+      persistZones(newMap);
+      return newMap;
+    });
+  }, [activeLayoutId, persistZones]);
+
+  const applyFloorImage = useCallback((src) => {
     const img = new window.Image();
     img.decoding = 'async';
-    img.src = '/floor.png'; // must be in public/
+    img.src = src;
     img.onload = () => {
       setFloorImage(img);
       setMapSize({
@@ -206,8 +295,69 @@ const FloorPage = () => {
         height: img.naturalHeight || img.height || BASE_MAP_HEIGHT,
       });
       setContentBounds(detectContentBounds(img));
+      hasAutoFittedRef.current = false;
+      setError('');
     };
+    img.onerror = () => {
+      setError('Could not load floor image. Please choose a valid image file.');
+    };
+  }, [setError]);
+
+  // =========================
+  // LOAD ZONES FROM STORAGE
+  // =========================
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(FLOOR_ZONES_STORAGE_KEY) || '{}');
+      if (saved && typeof saved === 'object') {
+        setZonesByLayout(saved);
+      }
+    } catch {
+      // ignore corrupt data
+    }
   }, []);
+
+  // =========================
+  // LOAD FLOOR IMAGE
+  // =========================
+  useEffect(() => {
+    const defaultLayout = {
+      id: DEFAULT_LAYOUT_ID,
+      name: 'Default Layout',
+      src: DEFAULT_FLOOR_IMAGE_PATH,
+    };
+
+    let customLayouts = [];
+
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(FLOOR_LAYOUTS_STORAGE_KEY) || '[]');
+      customLayouts = Array.isArray(parsed)
+        ? parsed.filter((layout) => layout && layout.id && layout.name && layout.src)
+        : [];
+    } catch {
+      customLayouts = [];
+    }
+
+    // Migrate legacy single-layout storage to multi-layout list.
+    const legacySrc = window.localStorage.getItem(FLOOR_IMAGE_STORAGE_KEY);
+    if (legacySrc && !customLayouts.some((layout) => layout.src === legacySrc)) {
+      customLayouts.unshift({
+        id: `layout-${Date.now()}`,
+        name: 'Uploaded Layout',
+        src: legacySrc,
+      });
+      window.localStorage.removeItem(FLOOR_IMAGE_STORAGE_KEY);
+    }
+
+    const nextLayouts = [defaultLayout, ...customLayouts];
+    const preferredActiveId = window.localStorage.getItem(ACTIVE_LAYOUT_STORAGE_KEY) || defaultLayout.id;
+    const activeLayout = nextLayouts.find((layout) => layout.id === preferredActiveId) || defaultLayout;
+
+    setLayoutOptions(nextLayouts);
+    setActiveLayoutId(activeLayout.id);
+    applyFloorImage(activeLayout.src);
+    persistLayouts(nextLayouts, activeLayout.id);
+  }, [applyFloorImage, persistLayouts]);
 
   useEffect(() => {
     const el = mapViewportRef.current;
@@ -233,6 +383,49 @@ const FloorPage = () => {
     fitToView();
     hasAutoFittedRef.current = true;
   }, [floorImage, fitToView]);
+
+  useEffect(() => {
+    if (!switchDeviceIdsKey) {
+      setSwitchPortTopology([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const loadTopology = async () => {
+      try {
+        const switchIds = switchDeviceIdsKey.split(',').filter(Boolean).map(Number);
+        const responses = await Promise.all(switchIds.map((switchId) => getDevicePorts(switchId)));
+
+        if (cancelled) {
+          return;
+        }
+
+        const allPorts = responses.flatMap((response) => response.data || []);
+        setSwitchPortTopology(
+          allPorts.filter((port) => port.connection_id && (port.connected_device_id || port.remote_switch_id))
+        );
+
+        // Build a map of deviceId -> total ports tracked for quick badges
+        const counts = {};
+        switchIds.forEach((sid, i) => {
+          const data = (responses[i] && responses[i].data) || [];
+          counts[sid] = data.length || 0;
+        });
+        setDevicePortCounts(counts);
+      } catch (err) {
+        if (!cancelled) {
+          setError(getApiErrorMessage(err, 'Failed to load network topology.'));
+        }
+      }
+    };
+
+    loadTopology();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setError, switchDeviceIdsKey, topologyReloadToken]);
 
   // =========================
   // HANDLE DRAG
@@ -313,6 +506,62 @@ const FloorPage = () => {
     setNewDevice(EMPTY_DEVICE);
   };
 
+  const handleOpenMapExistingDevice = () => {
+    setError('');
+    setSelectedDevice(null);
+    setShowAddDeviceModal(false);
+    setIsPlacingDevice(false);
+    setIsPlacingExistingDevice(false);
+
+    if (unmappedDevices.length === 0) {
+      setError('All devices are already placed on the floor map.');
+      return;
+    }
+
+    setDeviceToMapId(String(unmappedDevices[0].id));
+    setShowMapExistingDeviceModal(true);
+  };
+
+  const handleCloseMapExistingDevice = () => {
+    setShowMapExistingDeviceModal(false);
+    setIsPlacingExistingDevice(false);
+    setDeviceToMapId('');
+  };
+
+  const handleStartExistingDevicePlacement = () => {
+    if (!deviceToMapId) {
+      setError('Select a device to place on the map.');
+      return;
+    }
+
+    setShowMapExistingDeviceModal(false);
+    setIsPlacingExistingDevice(true);
+    setError('');
+  };
+
+  const placeExistingDeviceAt = async (x, y) => {
+    const selectedDeviceId = Number(deviceToMapId);
+    if (!selectedDeviceId) {
+      setError('No device selected to place on the map.');
+      return;
+    }
+
+    try {
+      setError('');
+      await updateDevice(selectedDeviceId, { x_position: x, y_position: y });
+      setDevices((prev) => prev.map((device) =>
+        device.id === selectedDeviceId ? { ...device, x_position: x, y_position: y } : device
+      ));
+      const mappedDevice = devices.find((device) => device.id === selectedDeviceId);
+      if (mappedDevice) {
+        setSelectedDevice({ ...mappedDevice, x_position: x, y_position: y });
+      }
+      handleCloseMapExistingDevice();
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to place the selected device on the map.'));
+    }
+  };
+
   const openAddModalAtPlacement = (x, y) => {
     // Clamp placement to map bounds and snap to grid before opening the add form.
     // This prevents out-of-bounds or awkward fractional positions from being saved.
@@ -345,11 +594,284 @@ const FloorPage = () => {
     }
   };
 
+  const handleSelectFloorImage = () => {
+    floorImageInputRef.current?.click();
+  };
+
+  const handleFloorImageUpload = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please choose an image file (PNG/JPG/WebP).');
+      return;
+    }
+
+    const reader = new window.FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      if (!dataUrl) {
+        setError('Unable to read the selected image.');
+        return;
+      }
+
+      const suggestedName = file.name.replace(/\.[^/.]+$/, '') || 'Custom Layout';
+      const enteredName = window.prompt('Name this layout:', suggestedName);
+      if (enteredName === null) {
+        return;
+      }
+
+      const layoutName = enteredName.trim() || suggestedName;
+      const nextLayout = {
+        id: `layout-${Date.now()}`,
+        name: layoutName,
+        src: dataUrl,
+      };
+
+      const nextLayouts = [...layoutOptions, nextLayout];
+      setLayoutOptions(nextLayouts);
+      setActiveLayoutId(nextLayout.id);
+      persistLayouts(nextLayouts, nextLayout.id);
+      applyFloorImage(dataUrl);
+    };
+    reader.onerror = () => {
+      setError('Unable to read the selected image.');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleResetFloorImage = () => {
+    setActiveLayoutId(DEFAULT_LAYOUT_ID);
+    persistLayouts(layoutOptions, DEFAULT_LAYOUT_ID);
+    applyFloorImage(DEFAULT_FLOOR_IMAGE_PATH);
+  };
+
+  const handleLayoutChange = (e) => {
+    const nextLayoutId = e.target.value;
+    const selectedLayout = layoutOptions.find((layout) => layout.id === nextLayoutId);
+    if (!selectedLayout) {
+      return;
+    }
+
+    setActiveLayoutId(nextLayoutId);
+    persistLayouts(layoutOptions, nextLayoutId);
+    applyFloorImage(selectedLayout.src);
+  };
+
+  // =========================
+  // ERASER HELPERS
+  // =========================
+  // Initialise offscreen canvas from the current floor image (once per erase session).
+  const initEraseCanvas = useCallback(() => {
+    if (eraseCanvasRef.current) return eraseCanvasRef.current;
+    if (!floorImage) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = mapSize.width;
+    canvas.height = mapSize.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(floorImage, 0, 0, mapSize.width, mapSize.height);
+    eraseCanvasRef.current = canvas;
+    return canvas;
+  }, [floorImage, mapSize]);
+
+  // Paint a transparent circle at canvas-pixel coords and refresh the Konva node.
+  const applyEraseStroke = useCallback((canvasX, canvasY, size) => {
+    const canvas = eraseCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(canvasX, canvasY, size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    // Update Konva directly — no React re-render needed during the stroke
+    if (konvaFloorImageRef.current) {
+      konvaFloorImageRef.current.image(canvas);
+      konvaFloorImageRef.current.getLayer()?.batchDraw();
+    }
+  }, []);
+
+  // On mouse-up: persist the edited image back into the layouts store.
+  const commitErase = useCallback(() => {
+    const canvas = eraseCanvasRef.current;
+    if (!canvas) return;
+    const dataUrl = canvas.toDataURL('image/png');
+    // Reload into React state so Konva Image prop stays in sync
+    const img = new window.Image();
+    img.src = dataUrl;
+    img.onload = () => setFloorImage(img);
+    // Update the active layout's src in state and localStorage
+    setLayoutOptions((prev) => {
+      const next = prev.map((l) =>
+        l.id === activeLayoutId ? { ...l, src: dataUrl } : l
+      );
+      persistLayouts(next, activeLayoutId);
+      return next;
+    });
+  }, [activeLayoutId, persistLayouts]);
+
+  // Reset the erase canvas when the layout changes (new image must be re-drawn).
+  useEffect(() => {
+    eraseCanvasRef.current = null;
+  }, [activeLayoutId]);
+
+  // =========================
+  // ZONE HANDLERS
+  // =========================
+  const handleAddZone = () => {
+    setIsDrawingZone(true);
+    setShowZonePanel(false);
+    setIsPlacingDevice(false);
+    setSelectedDevice(null);
+  };
+
+  const handleCancelZoneDraw = () => {
+    setIsDrawingZone(false);
+    setZoneDrawStart(null);
+    setZoneDrawCurrent(null);
+  };
+
+  const handleZoneMouseDown = (e) => {
+    if (!isDrawingZone) return;
+    const stage = e.target.getStage();
+    const pointer = stage?.getPointerPosition();
+    if (!pointer) return;
+    // Convert to logical map space
+    const mapX = (pointer.x - position.x) / zoom / mapScaleX;
+    const mapY = (pointer.y - position.y) / zoom / mapScaleY;
+    setZoneDrawStart({ x: mapX, y: mapY });
+    setZoneDrawCurrent({ x: mapX, y: mapY });
+  };
+
+  const handleZoneMouseMove = (e) => {
+    if (!isDrawingZone || !zoneDrawStart) return;
+    const stage = e.target.getStage();
+    const pointer = stage?.getPointerPosition();
+    if (!pointer) return;
+    const mapX = (pointer.x - position.x) / zoom / mapScaleX;
+    const mapY = (pointer.y - position.y) / zoom / mapScaleY;
+    setZoneDrawCurrent({ x: mapX, y: mapY });
+  };
+
+  const handleZoneMouseUp = () => {
+    if (!isDrawingZone || !zoneDrawStart || !zoneDrawCurrent) return;
+
+    const rx = Math.min(zoneDrawStart.x, zoneDrawCurrent.x);
+    const ry = Math.min(zoneDrawStart.y, zoneDrawCurrent.y);
+    const rw = Math.abs(zoneDrawCurrent.x - zoneDrawStart.x);
+    const rh = Math.abs(zoneDrawCurrent.y - zoneDrawStart.y);
+
+    // Ignore tiny accidental drags
+    if (rw < 10 || rh < 10) {
+      setZoneDrawStart(null);
+      setZoneDrawCurrent(null);
+      return;
+    }
+
+    const label = window.prompt('Zone label (e.g. "Server Room", "HR Dept"):', 'New Zone');
+    if (label === null) {
+      setZoneDrawStart(null);
+      setZoneDrawCurrent(null);
+      return;
+    }
+
+    const zone = {
+      id: `zone-${Date.now()}`,
+      label: label.trim() || 'Zone',
+      x: rx,
+      y: ry,
+      w: rw,
+      h: rh,
+      colorIndex: nextZoneColorIndex % ZONE_COLORS.length,
+    };
+
+    updateActiveZones((prev) => [...prev, zone]);
+    setNextZoneColorIndex((i) => i + 1);
+    setZoneDrawStart(null);
+    setZoneDrawCurrent(null);
+    setIsDrawingZone(false);
+    setShowZonePanel(true);
+  };
+
+  const handleRenameZone = (zoneId) => {
+    const zone = activeZones.find((z) => z.id === zoneId);
+    if (!zone) return;
+    const newLabel = window.prompt('Rename zone:', zone.label);
+    if (newLabel === null) return;
+    updateActiveZones((prev) =>
+      prev.map((z) => z.id === zoneId ? { ...z, label: newLabel.trim() || z.label } : z)
+    );
+  };
+
+  const handleDeleteZone = (zoneId) => {
+    const zone = activeZones.find((z) => z.id === zoneId);
+    if (!zone) return;
+    const confirmed = window.confirm(`Delete zone "${zone.label}"?`);
+    if (!confirmed) return;
+    updateActiveZones((prev) => prev.filter((z) => z.id !== zoneId));
+  };
+
+  const handleCycleZoneColor = (zoneId) => {
+    updateActiveZones((prev) =>
+      prev.map((z) =>
+        z.id === zoneId
+          ? { ...z, colorIndex: ((z.colorIndex || 0) + 1) % ZONE_COLORS.length }
+          : z
+      )
+    );
+  };
+
+  const handleDeleteActiveLayout = () => {
+    if (activeLayoutId === DEFAULT_LAYOUT_ID) {
+      setError('Default layout cannot be deleted.');
+      return;
+    }
+
+    const selectedLayout = layoutOptions.find((layout) => layout.id === activeLayoutId);
+    if (!selectedLayout) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete layout "${selectedLayout.name}"?`);
+    if (!confirmed) {
+      return;
+    }
+
+    const nextLayouts = layoutOptions.filter((layout) => layout.id !== activeLayoutId);
+    setLayoutOptions(nextLayouts);
+    setActiveLayoutId(DEFAULT_LAYOUT_ID);
+    persistLayouts(nextLayouts, DEFAULT_LAYOUT_ID);
+    applyFloorImage(DEFAULT_FLOOR_IMAGE_PATH);
+    setError('');
+  };
+
   // =========================
   // HANDLE CLICK (DESELECT DEVICE)
   // =========================
   const handleStageClick = (e) => {
     if (e.target.draggable()) return;
+    if (isDrawingZone) return;
+
+    if (isPlacingExistingDevice) {
+      const stage = e.target.getStage();
+      const pointer = stage?.getPointerPosition();
+      if (!pointer) return;
+
+      const mapX = (pointer.x - position.x) / zoom;
+      const mapY = (pointer.y - position.y) / zoom;
+      const logicalX = mapX / mapScaleX;
+      const logicalY = mapY / mapScaleY;
+
+      const snappedX = Math.round(Math.max(0, Math.min(logicalX, BASE_MAP_WIDTH)) / SNAP_SIZE) * SNAP_SIZE;
+      const snappedY = Math.round(Math.max(0, Math.min(logicalY, BASE_MAP_HEIGHT)) / SNAP_SIZE) * SNAP_SIZE;
+
+      placeExistingDeviceAt(snappedX, snappedY);
+      return;
+    }
 
     if (isPlacingDevice) {
       const stage = e.target.getStage();
@@ -411,11 +933,40 @@ const FloorPage = () => {
     const pointer = stage?.getPointerPosition();
     if (!pointer) return;
 
+    if (isDrawingZone) {
+      handleZoneMouseDown(e);
+      return;
+    }
+
+    if (isErasing) {
+      isEraserActiveRef.current = true;
+      const canvasX = (pointer.x - position.x) / zoom;
+      const canvasY = (pointer.y - position.y) / zoom;
+      initEraseCanvas();
+      applyEraseStroke(canvasX, canvasY, eraserSize);
+      return;
+    }
+
     setIsPanning(true);
     setPanStart(pointer);
   };
 
   const handleMouseMove = (e) => {
+    if (isDrawingZone && zoneDrawStart) {
+      handleZoneMouseMove(e);
+      return;
+    }
+
+    if (isErasing && isEraserActiveRef.current) {
+      const stage = e.target.getStage();
+      const pointer = stage?.getPointerPosition();
+      if (!pointer) return;
+      const canvasX = (pointer.x - position.x) / zoom;
+      const canvasY = (pointer.y - position.y) / zoom;
+      applyEraseStroke(canvasX, canvasY, eraserSize);
+      return;
+    }
+
     if (!isPanning) return;
 
     const stage = e.target.getStage();
@@ -430,6 +981,15 @@ const FloorPage = () => {
   };
 
   const handleMouseUp = () => {
+    if (isDrawingZone && zoneDrawStart) {
+      handleZoneMouseUp();
+      return;
+    }
+    if (isErasing && isEraserActiveRef.current) {
+      isEraserActiveRef.current = false;
+      commitErase();
+      return;
+    }
     setIsPanning(false);
   };
 
@@ -501,7 +1061,7 @@ const FloorPage = () => {
   const searchQuery = searchFilter.trim().toLowerCase();
   const isSearchActive = searchQuery.length > 0;
 
-  const matchesSearch = (device) => {
+  const matchesSearch = useCallback((device) => {
     if (!isSearchActive) return true;
 
     return (
@@ -512,7 +1072,12 @@ const FloorPage = () => {
       (device.user_name || '').toLowerCase().includes(searchQuery) ||
       (device.location || '').toLowerCase().includes(searchQuery)
     );
-  };
+  }, [isSearchActive, searchQuery]);
+
+  const unmappedDevices = useMemo(
+    () => devices.filter((device) => !hasMappedPosition(device)),
+    [devices]
+  );
 
   const filteredDevices = devices.filter((device) => {
     // Type filter
@@ -527,6 +1092,75 @@ const FloorPage = () => {
   });
 
   const highlightedMatches = filteredDevices.filter((device) => matchesSearch(device)).length;
+  const filteredDeviceMap = useMemo(
+    () => new Map(filteredDevices.map((device) => [device.id, device])),
+    [filteredDevices]
+  );
+  const visibleNetworkLinks = useMemo(() => {
+    const seenConnectionIds = new Set();
+
+    return switchPortTopology.reduce((links, port) => {
+      if (!port.connection_id || seenConnectionIds.has(port.connection_id)) {
+        return links;
+      }
+
+      const sourceDevice = filteredDeviceMap.get(port.device_id);
+      const targetDevice = filteredDeviceMap.get(port.connected_device_id || port.remote_switch_id);
+
+      if (!sourceDevice || !targetDevice || !hasMappedPosition(sourceDevice) || !hasMappedPosition(targetDevice)) {
+        return links;
+      }
+
+      seenConnectionIds.add(port.connection_id);
+
+      const sourceMatches = matchesSearch(sourceDevice);
+      const targetMatches = matchesSearch(targetDevice);
+      links.push({
+        id: port.connection_id,
+        sourceId: sourceDevice.id,
+        targetId: targetDevice.id,
+        sourceX: Number(sourceDevice.x_position) * mapScaleX,
+        sourceY: Number(sourceDevice.y_position) * mapScaleY,
+        targetX: Number(targetDevice.x_position) * mapScaleX,
+        targetY: Number(targetDevice.y_position) * mapScaleY,
+        isUplink: Boolean(port.remote_switch_id),
+        cableLabel: port.cable_label || '',
+        dimmed: isSearchActive && !sourceMatches && !targetMatches,
+      });
+      return links;
+    }, []);
+  }, [filteredDeviceMap, isSearchActive, mapScaleX, mapScaleY, matchesSearch, switchPortTopology]);
+
+  // Aggregate multiple connections between the same device pair into a single visual link
+  const aggregatedNetworkLinks = useMemo(() => {
+    const map = new Map();
+
+    visibleNetworkLinks.forEach((link) => {
+      const a = Number(link.sourceId);
+      const b = Number(link.targetId);
+      const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+
+      const entry = map.get(key) || {
+        id: key,
+        sourceX: link.sourceX,
+        sourceY: link.sourceY,
+        targetX: link.targetX,
+        targetY: link.targetY,
+        count: 0,
+        isUplink: link.isUplink,
+        dimmed: link.dimmed,
+      };
+
+      entry.count += 1;
+      // prefer showing uplink styling if any connection is an uplink
+      entry.isUplink = entry.isUplink || link.isUplink;
+      entry.dimmed = entry.dimmed && link.dimmed;
+
+      map.set(key, entry);
+    });
+
+    return Array.from(map.values());
+  }, [visibleNetworkLinks]);
 
   // Get unique device types
   const deviceTypes = [...new Set([...DEVICE_TYPE_OPTIONS, ...devices.map((d) => d.type).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
@@ -571,6 +1205,13 @@ const FloorPage = () => {
       {/* TOOLBAR */}
       <div style={styles.toolbar}>
         {error && <div style={styles.errorBanner}>{error}</div>}
+        <input
+          ref={floorImageInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleFloorImageUpload}
+        />
         <div style={styles.toolbarGroup}>
           <button
             onClick={handleOpenAddDevice}
@@ -578,6 +1219,14 @@ const FloorPage = () => {
             title="Click and then place the device on the map"
           >
             {isPlacingDevice ? 'Click Map to Place' : 'Add Device'}
+          </button>
+
+          <button
+            onClick={handleOpenMapExistingDevice}
+            style={styles.secondaryToolButton}
+            title="Place an existing device on the floor map"
+          >
+            Map Existing Device
           </button>
 
           {isPlacingDevice && (
@@ -590,12 +1239,22 @@ const FloorPage = () => {
             </button>
           )}
 
+          {isPlacingExistingDevice && (
+            <button
+              onClick={() => setIsPlacingExistingDevice(false)}
+              style={styles.cancelPlacementButton}
+              title="Cancel placement of an existing device"
+            >
+              Cancel Map Device
+            </button>
+          )}
+
           {/* Grid Toggle */}
           <button
             onClick={() => setShowGrid(!showGrid)}
             style={{
               ...styles.toolButton,
-              backgroundColor: showGrid ? '#3ba57d' : '#95a5a6',
+              backgroundColor: showGrid ? '#0d9488' : '#64748b',
             }}
             title="Toggle Grid"
           >
@@ -608,6 +1267,111 @@ const FloorPage = () => {
             title="Fit map to screen"
           >
             Fit Map
+          </button>
+
+          <button
+            onClick={handleSelectFloorImage}
+            style={styles.toolButton}
+            title="Upload and replace the current floor layout image"
+          >
+            Update Layout
+          </button>
+
+          <button
+            onClick={() => {
+              if (isDrawingZone) {
+                handleCancelZoneDraw();
+              } else {
+                handleAddZone();
+              }
+            }}
+            style={{
+              ...styles.toolButton,
+              backgroundColor: isDrawingZone ? '#e11d48' : '#4f46e5',
+            }}
+            title={isDrawingZone ? 'Cancel zone drawing' : 'Draw a new zone on the map'}
+          >
+            {isDrawingZone ? 'Cancel Zone' : '⬜ Add Zone'}
+          </button>
+
+          <button
+            onClick={() => setShowZonePanel((v) => !v)}
+            style={{
+              ...styles.toolButton,
+              backgroundColor: showZonePanel ? '#4f46e5' : '#6366f1',
+              position: 'relative',
+            }}
+            title="Manage zones"
+          >
+            Zones{activeZones.length > 0 ? ` (${activeZones.length})` : ''}
+          </button>
+
+          {/* Eraser */}
+          <button
+            onClick={() => {
+              setIsErasing((v) => !v);
+              setIsPlacingDevice(false);
+              setIsDrawingZone(false);
+            }}
+            style={{
+              ...styles.toolButton,
+              backgroundColor: isErasing ? '#d97706' : '#64748b',
+            }}
+            title={isErasing ? 'Exit eraser mode' : 'Erase parts of the floor image'}
+          >
+            {isErasing ? '🧹 Erasing…' : '🧹 Erase'}
+          </button>
+
+          {isErasing && (
+            <div style={styles.eraserSizeRow}>
+              <span style={styles.eraserSizeLabel}>Size:</span>
+              {[8, 20, 40, 70].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setEraserSize(s)}
+                  style={{
+                    ...styles.eraserSizeBtn,
+                    backgroundColor: eraserSize === s ? '#e74c3c' : '#ecf0f1',
+                    color: eraserSize === s ? '#fff' : '#2c3e50',
+                  }}
+                  title={`Eraser size ${s}px`}
+                >
+                  {s === 8 ? 'XS' : s === 20 ? 'S' : s === 40 ? 'M' : 'L'}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <select
+            value={activeLayoutId}
+            onChange={handleLayoutChange}
+            style={styles.filterSelect}
+            title="Select a saved floor layout"
+          >
+            {layoutOptions.map((layout) => (
+              <option key={layout.id} value={layout.id}>{layout.name}</option>
+            ))}
+          </select>
+
+          <button
+            onClick={handleResetFloorImage}
+            style={styles.secondaryToolButton}
+            title="Revert to default floor.png layout"
+          >
+            Use Default Layout
+          </button>
+
+          <button
+            onClick={handleDeleteActiveLayout}
+            style={{
+              ...styles.deleteToolButton,
+              opacity: activeLayoutId === DEFAULT_LAYOUT_ID ? 0.6 : 1,
+              cursor: activeLayoutId === DEFAULT_LAYOUT_ID ? 'not-allowed' : 'pointer',
+            }}
+            disabled={activeLayoutId === DEFAULT_LAYOUT_ID}
+            title={activeLayoutId === DEFAULT_LAYOUT_ID ? 'Default layout cannot be deleted' : 'Delete selected custom layout'}
+          >
+            Delete Layout
           </button>
         </div>
 
@@ -673,7 +1437,89 @@ const FloorPage = () => {
             Click on the map to choose where the new device should be placed.
           </div>
         )}
+
+        {isPlacingExistingDevice && (
+          <div style={styles.placementInfo}>
+            Click on the map to place the selected device at that location.
+          </div>
+        )}
+
+        {isDrawingZone && (
+          <div style={{ ...styles.placementInfo, backgroundColor: '#f3e5f5', color: '#6c3483', borderColor: '#9b59b6' }}>
+            Click and drag on the map to draw a zone rectangle.
+          </div>
+        )}
+
+        {isErasing && (
+          <div style={{ ...styles.placementInfo, backgroundColor: '#fdecea', color: '#c0392b', borderColor: '#e74c3c' }}>
+            🧹 Erase mode — click or drag to erase parts of the floor image. Changes are saved automatically on release.
+          </div>
+        )}
       </div>
+
+      {/* ZONE PANEL */}
+      {showZonePanel && (
+        <div style={styles.zonePanel}>
+          <div style={styles.zonePanelHeader}>
+            <span style={{ fontWeight: 700, fontSize: '14px' }}>Zones — {activeZones.length} defined</span>
+            <button onClick={() => setShowZonePanel(false)} style={styles.zonePanelClose}>✕</button>
+          </div>
+          {activeZones.length === 0 && (
+            <div style={styles.zoneEmpty}>No zones yet. Click "⬜ Add Zone" to draw one on the map.</div>
+          )}
+          {activeZones.map((zone) => {
+            const color = ZONE_COLORS[zone.colorIndex % ZONE_COLORS.length];
+            return (
+              <div key={zone.id} style={styles.zoneRow}>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: 12,
+                    height: 12,
+                    borderRadius: 2,
+                    backgroundColor: color.stroke,
+                    marginRight: 8,
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ flex: 1, fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {zone.label}
+                </span>
+                <span style={{ fontSize: '11px', color: '#7f8c8d', marginRight: 8 }}>
+                  {Math.round(zone.w)}×{Math.round(zone.h)}
+                </span>
+                <button
+                  onClick={() => handleCycleZoneColor(zone.id)}
+                  style={styles.zoneAction}
+                  title="Change color"
+                >
+                  🎨
+                </button>
+                <button
+                  onClick={() => handleRenameZone(zone.id)}
+                  style={styles.zoneAction}
+                  title="Rename zone"
+                >
+                  ✏️
+                </button>
+                <button
+                  onClick={() => handleDeleteZone(zone.id)}
+                  style={{ ...styles.zoneAction, color: '#e74c3c' }}
+                  title="Delete zone"
+                >
+                  🗑
+                </button>
+              </div>
+            );
+          })}
+          <button
+            onClick={handleAddZone}
+            style={styles.zoneAddButton}
+          >
+            + Draw New Zone
+          </button>
+        </div>
+      )}
 
       {/* MAP AREA */}
       <div style={styles.mapAreaWrapper}>
@@ -690,7 +1536,7 @@ const FloorPage = () => {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
-            style={{ cursor: isPlacingDevice ? 'crosshair' : (isPanning ? 'grabbing' : 'grab') }}
+            style={{ cursor: isErasing ? 'crosshair' : (isDrawingZone ? 'crosshair' : (isPlacingDevice ? 'crosshair' : (isPanning ? 'grabbing' : 'grab'))) }}
           >
             <Layer>
               <Group x={position.x} y={position.y} scaleX={zoom} scaleY={zoom}>
@@ -703,12 +1549,93 @@ const FloorPage = () => {
               {/* Floor Image */}
               {floorImage && (
                 <Image
+                  ref={konvaFloorImageRef}
                   image={floorImage}
                   width={mapSize.width}
                   height={mapSize.height}
                   imageSmoothingEnabled={true}
                 />
               )}
+
+              {/* Zones - rendered on top of floor image, below devices */}
+              {activeZones.map((zone) => {
+                const color = ZONE_COLORS[zone.colorIndex % ZONE_COLORS.length];
+                return (
+                  <Group key={zone.id}>
+                    <Rect
+                      x={zone.x * mapScaleX}
+                      y={zone.y * mapScaleY}
+                      width={zone.w * mapScaleX}
+                      height={zone.h * mapScaleY}
+                      fill={color.fill}
+                      stroke={color.stroke}
+                      strokeWidth={1.5}
+                      dash={[8, 4]}
+                      listening={false}
+                    />
+                    <Text
+                      x={zone.x * mapScaleX + 6}
+                      y={zone.y * mapScaleY + 4}
+                      text={zone.label}
+                      fontSize={13}
+                      fontStyle="bold"
+                      fill={color.stroke}
+                      listening={false}
+                    />
+                  </Group>
+                );
+              })}
+
+              {/* Zone being drawn (preview rect) */}
+              {isDrawingZone && zoneDrawStart && zoneDrawCurrent && (() => {
+                const rx = Math.min(zoneDrawStart.x, zoneDrawCurrent.x);
+                const ry = Math.min(zoneDrawStart.y, zoneDrawCurrent.y);
+                const rw = Math.abs(zoneDrawCurrent.x - zoneDrawStart.x);
+                const rh = Math.abs(zoneDrawCurrent.y - zoneDrawStart.y);
+                const color = ZONE_COLORS[nextZoneColorIndex % ZONE_COLORS.length];
+                return (
+                  <Rect
+                    x={rx * mapScaleX}
+                    y={ry * mapScaleY}
+                    width={rw * mapScaleX}
+                    height={rh * mapScaleY}
+                    fill={color.fill}
+                    stroke={color.stroke}
+                    strokeWidth={2}
+                    dash={[6, 3]}
+                    listening={false}
+                  />
+                );
+              })()}
+
+              {/* Network topology lines (aggregated by device pair) */}
+              {aggregatedNetworkLinks.map((link) => {
+                const baseWidth = link.isUplink ? 3 : 2.5;
+                const width = baseWidth + Math.min(link.count - 1, 6) * 0.9;
+                const midX = (link.sourceX + link.targetX) / 2;
+                const midY = (link.sourceY + link.targetY) / 2;
+
+                return (
+                  <React.Fragment key={`network-link-${link.id}`}>
+                    <Line
+                      points={[link.sourceX, link.sourceY, link.targetX, link.targetY]}
+                      stroke={link.isUplink ? '#355c7d' : '#3ba57d'}
+                      strokeWidth={width}
+                      opacity={link.dimmed ? 0.18 : 0.82}
+                      dash={link.isUplink ? [10, 6] : undefined}
+                      lineCap="round"
+                      lineJoin="round"
+                      listening={false}
+                    />
+                    {link.count > 1 && (
+                      <Group x={midX} y={midY} listening={false}>
+                        <Circle radius={10} fill="#1f2937" opacity={0.9} />
+                        <Text text={`${link.count}`} fontSize={11} fill="#fff" align="center" verticalAlign="middle" x={-6} y={-7} />
+                      </Group>
+                    )}
+                  </React.Fragment>
+                );
+              })}
 
               {/* Devices */}
               {filteredDevices.filter((device) => {
@@ -725,7 +1652,7 @@ const FloorPage = () => {
                 const logicalY = Number.isFinite(rawY) ? rawY : 0;
                 const x = logicalX * mapScaleX;
                 const y = logicalY * mapScaleY;
-                const icon = device.icon || '💻';
+                const icon = resolveDeviceIcon(device);
 
                 const status = device.status || '';
                 const dotColor =
@@ -739,14 +1666,21 @@ const FloorPage = () => {
                     ? '#3498db'
                     : '#95a5a6';
 
+                const handleSelectDevice = (event) => {
+                  event.cancelBubble = true;
+                  setSelectedDevice(device);
+                };
+
                 return (
                   <Group
                     key={device.id}
+                    name="device-node"
                     x={x}
                     y={y}
                     draggable
                     opacity={isSearchActive && !isSearchMatch ? 0.28 : 1}
-                    onClick={() => setSelectedDevice(device)}
+                    onClick={handleSelectDevice}
+                    onTap={handleSelectDevice}
                     onMouseEnter={(e) => {
                       setHoveredDevice(device);
                       updateTooltipPosition(e);
@@ -775,6 +1709,13 @@ const FloorPage = () => {
                       stroke={selectedDevice?.id === device.id ? 'yellow' : undefined}
                       strokeWidth={selectedDevice?.id === device.id ? 1 : 0}
                     />
+                    {/* Port count badge */}
+                    { (devicePortCounts[device.id] || 0) > 0 && (
+                      <Group x={ICON_HALF - 6} y={-ICON_HALF + 6} listening={false}>
+                        <Circle radius={10} fill="#111" opacity={0.9} />
+                        <Text text={`${devicePortCounts[device.id]}`} fontSize={11} fill="#fff" align="center" verticalAlign="middle" x={-6} y={-7} />
+                      </Group>
+                    )}
                     {/* Status dot badge */}
                     <Circle
                       x={8}
@@ -855,6 +1796,48 @@ const FloorPage = () => {
       </div>
 
       {/* MODALS */}
+      {showMapExistingDeviceModal && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.addDeviceModal}>
+            <div style={styles.modalHeader}>
+              <div>
+                <h3 style={styles.modalTitle}>Map Existing Device</h3>
+                <div style={styles.modalSubtitle}>Choose a saved device and then click its location on the map.</div>
+              </div>
+              <button onClick={handleCloseMapExistingDevice} style={styles.modalCloseButton} disabled={saving}>
+                ✕
+              </button>
+            </div>
+
+            {error && <div style={styles.modalError}>{error}</div>}
+
+            <div style={styles.addDeviceForm}>
+              <select
+                value={deviceToMapId}
+                onChange={(e) => setDeviceToMapId(e.target.value)}
+                style={styles.modalInput}
+              >
+                <option value="">Select a device</option>
+                {unmappedDevices.map((device) => (
+                  <option key={device.id} value={device.id}>
+                    {device.name || 'Unnamed device'} {device.type ? `- ${device.type}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.modalActions}>
+              <button onClick={handleCloseMapExistingDevice} style={styles.secondaryButton} disabled={saving}>
+                Cancel
+              </button>
+              <button onClick={handleStartExistingDevicePlacement} style={styles.primaryButton} disabled={saving || !deviceToMapId}>
+                {saving ? 'Saving...' : 'Place on Map'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAddDeviceModal && (
         <div style={styles.modalOverlay}>
           <div style={styles.addDeviceModal}>
@@ -1051,6 +2034,7 @@ const FloorPage = () => {
           device={selectedDevice}
           onClose={() => setSelectedDevice(null)}
           refreshDevices={refresh}
+          onPortsChanged={() => setTopologyReloadToken((current) => current + 1)}
         />
       )}
 
@@ -1071,45 +2055,56 @@ const styles = {
     backgroundColor: '#f5f6fa',
   },
   statsBar: {
-    backgroundColor: '#fff',
-    padding: '12px 20px',
-    borderBottom: '2px solid #ecf0f1',
+    backgroundColor: 'linear-gradient(135deg, #ffffff 0%, #f8fbfc 100%)',
+    padding: '16px 20px',
+    borderBottom: '1px solid #e0e7eb',
     display: 'flex',
-    gap: '30px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+    gap: '20px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+    alignItems: 'center',
   },
   statItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: '10px',
+    gap: '12px',
+    padding: '10px 14px',
+    backgroundColor: '#f7fafb',
+    borderRadius: '8px',
+    border: '1px solid #e8ecf0',
+    minWidth: 'max-content',
   },
   statLabel: {
-    fontSize: '13px',
+    fontSize: '12px',
     fontWeight: '600',
-    color: '#34495e',
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
   },
   statValue: {
-    fontSize: '18px',
-    fontWeight: 'bold',
-    color: '#2c3e50',
+    fontSize: '22px',
+    fontWeight: '700',
+    color: '#1abc9c',
+    minWidth: '32px',
+    textAlign: 'center',
   },
   toolbar: {
-    backgroundColor: '#fff',
-    padding: '15px 20px',
-    borderBottom: '1px solid #ecf0f1',
+    backgroundColor: 'linear-gradient(135deg, #ffffff 0%, #f8fbfc 100%)',
+    padding: '14px 20px',
+    borderBottom: '1px solid #e0e7eb',
     display: 'flex',
-    gap: '20px',
+    gap: '12px',
     alignItems: 'center',
     flexWrap: 'wrap',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
   },
   errorBanner: {
     width: '100%',
     padding: '12px 14px',
     borderRadius: '8px',
-    backgroundColor: '#fdecea',
-    color: '#b23b3b',
+    backgroundColor: '#fee2e2',
+    color: '#991b1b',
     fontWeight: '600',
+    fontSize: '13px',
   },
   toolbarGroup: {
     display: 'flex',
@@ -1122,40 +2117,67 @@ const styles = {
     alignItems: 'center',
   },
   filterSelect: {
-    padding: '8px 12px',
-    border: '1px solid #bdc3c7',
-    borderRadius: '4px',
+    padding: '9px 12px',
+    border: '1px solid #d1dae0',
+    borderRadius: '6px',
     fontSize: '13px',
     fontFamily: 'inherit',
     cursor: 'pointer',
     backgroundColor: '#fff',
+    color: '#34495e',
+    fontWeight: '500',
+    transition: 'all 0.2s ease',
   },
   toolButton: {
-    padding: '8px 16px',
-    backgroundColor: '#3ba57d',
+    padding: '9px 16px',
+    backgroundColor: '#0d9488',
     color: 'white',
     border: 'none',
-    borderRadius: '4px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: '600',
+    transition: 'all 0.2s ease',
+    boxShadow: '0 2px 6px rgba(13, 148, 136, 0.2)',
+  },
+  secondaryToolButton: {
+    padding: '9px 14px',
+    backgroundColor: '#f7fafb',
+    color: '#34495e',
+    border: '1px solid #d1dae0',
+    borderRadius: '6px',
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: '600',
     transition: 'all 0.2s ease',
   },
+  deleteToolButton: {
+    padding: '9px 14px',
+    backgroundColor: '#fee2e2',
+    color: '#e11d48',
+    border: '1px solid #fecaca',
+    borderRadius: '6px',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+  },
   cancelPlacementButton: {
-    padding: '8px 14px',
-    backgroundColor: '#ffffff',
-    color: '#b23b3b',
-    border: '1px solid #efc2c2',
-    borderRadius: '4px',
+    padding: '9px 14px',
+    backgroundColor: '#fee2e2',
+    color: '#e11d48',
+    border: '1px solid #fecaca',
+    borderRadius: '6px',
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: '600',
+    transition: 'all 0.2s ease',
   },
   zoomLevel: {
     marginLeft: '10px',
-    padding: '6px 12px',
-    backgroundColor: '#ecf0f1',
-    borderRadius: '4px',
+    padding: '9px 14px',
+    backgroundColor: '#f0f4f8',
+    borderRadius: '6px',
     fontSize: '13px',
     fontWeight: '600',
     color: '#34495e',
@@ -1170,25 +2192,28 @@ const styles = {
   searchInput: {
     width: '100%',
     padding: '10px 35px 10px 15px',
-    border: '1px solid #bdc3c7',
-    borderRadius: '4px',
+    border: '1px solid #d1dae0',
+    borderRadius: '6px',
     fontSize: '13px',
     fontFamily: 'inherit',
+    backgroundColor: '#fff',
+    color: '#34495e',
+    transition: 'all 0.2s ease',
   },
   matchInfo: {
-    padding: '8px 12px',
-    borderRadius: '999px',
-    backgroundColor: '#ecf9f3',
-    color: '#1f7a59',
+    padding: '9px 14px',
+    borderRadius: '6px',
+    backgroundColor: '#d1f5eb',
+    color: '#0f766e',
     fontSize: '12px',
     fontWeight: '700',
     whiteSpace: 'nowrap',
   },
   placementInfo: {
-    padding: '8px 12px',
-    borderRadius: '999px',
-    backgroundColor: '#fff8e6',
-    color: '#8a6d1e',
+    padding: '9px 14px',
+    borderRadius: '6px',
+    backgroundColor: '#fef3c7',
+    color: '#92400e',
     fontSize: '12px',
     fontWeight: '700',
     whiteSpace: 'nowrap',
@@ -1200,8 +2225,9 @@ const styles = {
     border: 'none',
     cursor: 'pointer',
     fontSize: '16px',
-    color: '#7f8c8d',
+    color: '#cbd5e0',
     padding: '5px 10px',
+    transition: 'color 0.2s ease',
   },
   mapAreaWrapper: {
     flex: 1,
@@ -1407,7 +2433,89 @@ const styles = {
     fontWeight: '700',
     cursor: 'pointer',
   },
-
+  zonePanel: {
+    backgroundColor: '#fff',
+    borderBottom: '1px solid #e1d5f0',
+    padding: '12px 20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    maxHeight: '260px',
+    overflowY: 'auto',
+  },
+  zonePanelHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '4px',
+  },
+  zonePanelClose: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '16px',
+    color: '#7f8c8d',
+    padding: '2px 6px',
+  },
+  zoneEmpty: {
+    fontSize: '13px',
+    color: '#95a5a6',
+    fontStyle: 'italic',
+    padding: '4px 0',
+  },
+  zoneRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '6px 8px',
+    borderRadius: '6px',
+    backgroundColor: '#faf5ff',
+    border: '1px solid #e9d8fd',
+  },
+  zoneAction: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '14px',
+    padding: '2px 4px',
+    borderRadius: '3px',
+  },
+  zoneAddButton: {
+    marginTop: '4px',
+    padding: '8px 14px',
+    backgroundColor: '#8e44ad',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: 600,
+    alignSelf: 'flex-start',
+  },
+  eraserSizeRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginLeft: '4px',
+  },
+  eraserSizeLabel: {
+    fontSize: '12px',
+    color: '#64748b',
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    letterSpacing: '0.3px',
+  },
+  eraserSizeBtn: {
+    padding: '7px 12px',
+    border: '1px solid #d1dae0',
+    borderRadius: '5px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: 600,
+    backgroundColor: '#f7fafb',
+    color: '#34495e',
+    transition: 'all 0.2s ease',
+  },
 
 };
 

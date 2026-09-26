@@ -27,3 +27,28 @@ export const updateDevice = (id, data) => {
 export const deleteDevice = (id) => {
   return apiClient.delete(`/devices/${id}`); // delete device
 };
+
+// =========================
+// BULK DELETE devices
+// =========================
+export const bulkDeleteDevices = (ids) => {
+  return apiClient.post('/devices/bulk-delete', { ids });
+};
+
+// =========================
+// IMPORT devices from CSV
+// =========================
+export const importDevicesFromCSV = (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiClient.post('/devices/import/csv', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+// =========================
+// EXPORT devices as CSV
+// =========================
+export const exportDevicesToCSV = () => {
+  return apiClient.get('/devices/export/csv', { responseType: 'blob' });
+};
